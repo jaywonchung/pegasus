@@ -1,0 +1,16 @@
+[package]
+name = "pegasus"
+description = "Pegasus: A Simple Command Runner for Multiple Nodes"
+authors = ["Jae-Won Chung <jwnchung@umich.edu>"]
+version = "0.1.0"
+edition = "2021"
+repository = "https://github.com/jaywonchung/pegasus"
+license = "MIT"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+openssh = "0.8.1"
+flume = "0.10.10"
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.8"
+futures = "0.3"
