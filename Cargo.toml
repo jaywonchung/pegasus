@@ -8,9 +8,10 @@ repository = "https://github.com/jaywonchung/pegasus"
 license = "MIT"
 
 [dependencies]
-tokio = { version = "1", features = ["full"] }
 openssh = "0.8.1"
-flume = "0.10.10"
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+flume = { version = "0.10.10", features = ["async"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.8"
-futures = "0.3"
+clap = { version = "3.0.13", features = ["derive"] }
