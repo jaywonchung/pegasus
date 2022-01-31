@@ -1,3 +1,4 @@
 /target
 hosts.yaml
-jobs.yaml
+queue.yaml
+consumed.yaml
