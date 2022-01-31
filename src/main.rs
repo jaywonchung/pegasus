@@ -95,7 +95,7 @@ async fn get_one_job_line() -> Option<Vec<String>> {
                     return None;
                 }
                 // Remove one job from queue.yaml
-                let job = jobs.remove(jobs.len()-1);
+                let job = jobs.remove(0);
                 let write_handle = queue_file.write_handle();
                 serde_yaml::to_writer(write_handle, &jobs).expect("Failed to update queue.yaml");
                 // Move the job to consumed.yaml
@@ -272,6 +272,10 @@ async fn run_queue(cli: &Cli) -> Result<(), openssh::Error> {
                 let exit_status = process.wait().await
                     .expect(&format!("[{}] Waiting on child errored.", &host));
                 println!("[{}] === done ({}) ===", &host, exit_status);
+                if notify_tx.send_async(host_index).await.is_err() {
+                    eprintln!("[{}] Terminating connection.", &host);
+                    break;
+                }
             }
         }));
     }
@@ -294,6 +298,7 @@ async fn run_queue(cli: &Cli) -> Result<(), openssh::Error> {
             break;
         }
     }
+    drop(notify_rx);
     drop(command_txs);
 
     // The scheduling loop has terminated, but there should be commands still running.

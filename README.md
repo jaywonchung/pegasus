@@ -4,7 +4,8 @@ A simple multi-node command runner.
 
 ## TODO
 
-- Sub-hosts: A single host split into multiple hosts based on some parameter.
+- Host and job parametrization
+  - A single host split into multiple hosts based on some parameter.
   - For the use case right now, add 'container'.
 
 ```yaml
