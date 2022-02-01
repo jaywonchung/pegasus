@@ -11,6 +11,7 @@ use std::str::FromStr;
 
 use serde::Deserialize;
 use void::Void;
+use colored::*;
 
 use crate::serde::string_or_mapping;
 
@@ -28,6 +29,13 @@ impl Host {
             hostname,
             params: HashMap::new(),
         }
+    }
+
+    /// For pretty printing the host name.
+    /// Surrounds with brackets and colors it with a random color.
+    pub fn to_pretty(&self) -> ColoredString {
+        let color = random_color::RandomColor::new().to_rgb_array();
+        format!("[{}]", self).truecolor(color[0], color[1], color[2])
     }
 }
 

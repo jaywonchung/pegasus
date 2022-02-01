@@ -18,13 +18,14 @@ use openssh::{KnownHosts, Session};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::ChildStdout;
 use tokio::sync::broadcast;
+use colored::ColoredString;
 
 use crate::config::{Config, Mode};
 use crate::host::get_hosts;
 use crate::job::{get_one_job, Cmd};
 use crate::sync::LockedFile;
 
-async fn stream_stdout(host: &str, stdout: &mut ChildStdout) {
+async fn stream_stdout(colorhost: &ColoredString, stdout: &mut ChildStdout) {
     let mut stdout_reader = BufReader::new(stdout);
     let mut line_buf = String::with_capacity(256);
     loop {
@@ -42,7 +43,7 @@ async fn stream_stdout(host: &str, stdout: &mut ChildStdout) {
             for c in buf.iter().map(|c| *c as char) {
                 match c {
                     '\r' | '\n' => {
-                        println!("[{}] {}", &host, line_buf);
+                        println!("{} {}", colorhost, line_buf);
                         line_buf.clear();
                     }
                     _ => line_buf.push(c),
@@ -68,16 +69,17 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
         let mut command_rx = command_tx.subscribe();
         let notify_tx = notify_tx.clone();
         let host = host.clone();
+        let colorhost = host.to_pretty();
         tasks.push(tokio::spawn(async move {
             // Open a new SSH session with the host.
             let session = Session::connect(&host.hostname, KnownHosts::Add)
                 .await
                 .expect(&format!("[{}] Failed to connect to host.", host));
-            eprintln!("[{}] Connected to host.", host);
+            eprintln!("{} Connected to host.", colorhost);
             let mut registry = Handlebars::new();
             while let Ok(job) = command_rx.recv().await {
                 let job = job.fill_template(&mut registry, &host);
-                println!("[{}] === run '{}' ===", host, &job);
+                println!("{} === run '{}' ===", host, &job);
                 let mut cmd = session.command("sh");
                 let mut process = cmd
                     .arg("-c")
@@ -86,7 +88,7 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
                     .spawn()
                     .unwrap();
                 stream_stdout(
-                    host.to_string().as_ref(),
+                    &colorhost,
                     process.stdout().as_mut().unwrap(),
                 )
                 .await;
@@ -96,8 +98,8 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
                     .expect(&format!("[{}] Waiting on child errored.", host))
                     .code();
                 println!(
-                    "[{}] === done ({}) ===",
-                    host,
+                    "{} === done ({}) ===",
+                    colorhost,
                     match exitcode {
                         Some(i) => format!("exit code: {}", i),
                         None => "killed by signal".into(),
@@ -108,7 +110,7 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
                     .await
                     .expect("Failed to send exit code.");
             }
-            eprintln!("[{}] Terminating connection.", host);
+            eprintln!("{} Terminating connection.", colorhost);
         }));
     }
     drop(notify_tx);
@@ -168,18 +170,19 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
         command_txs.push(command_tx);
         let notify_tx = notify_tx.clone();
         let host = host.clone();
+        let colorhost = host.to_pretty();
         tasks.push(tokio::spawn(async move {
             // Open a new SSH session with the host.
             let session = Session::connect(&host.hostname, KnownHosts::Add)
                 .await
                 .expect(&format!("[{}] Failed to connect to host.", host));
-            eprintln!("[{}] Connected to host.", host);
+            eprintln!("{} Connected to host.", colorhost);
             let mut registry = Handlebars::new();
             // Request a command to run from the scheduler.
             if notify_tx.send_async(host_index).await.is_ok() {
                 while let Ok(job) = command_rx.recv_async().await {
                     let job = job.fill_template(&mut registry, &host);
-                    println!("[{}] === run '{}' ===", host, &job);
+                    println!("{} === run '{}' ===", colorhost, &job);
                     let mut cmd = session.command("sh");
                     let mut process = cmd
                         .arg("-c")
@@ -188,7 +191,7 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
                         .spawn()
                         .unwrap();
                     stream_stdout(
-                        host.to_string().as_ref(),
+                        &colorhost,
                         process.stdout().as_mut().unwrap(),
                     )
                     .await;
@@ -198,8 +201,8 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
                         .expect(&format!("[{}] Waiting on child errored.", host))
                         .code();
                     println!(
-                        "[{}] === done ({}) ===",
-                        host,
+                        "{} === done ({}) ===",
+                        colorhost,
                         match exitcode {
                             Some(i) => format!("exit code: {}", i),
                             None => "killed by signal".into(),
@@ -210,7 +213,7 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
                     }
                 }
             }
-            eprintln!("[{}] Terminating connection.", host);
+            eprintln!("{} Terminating connection.", colorhost);
         }));
     }
     drop(notify_tx);
