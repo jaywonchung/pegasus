@@ -20,6 +20,7 @@ To use Pegasus,
 
 1. Clone this repo (I'll soon release binaries, too).
 2. Setup passwordless SSH for your nodes.
+3. Populate `hosts.yaml` and `queue.yaml`, and run Pegasus.
 
 ### Queue Mode: Getting a Bag of Jobs Done
 
@@ -135,3 +136,29 @@ How many commands will execute in Queue mode?
 ```
 
 Note that although `echo bye from {{ hostname }}` doesn't really use the `high` parameter, it will run four times.
+
+### Modifying the Queue
+
+`queue.yaml` is **actually** the queue.
+
+Pegasus removes the first entry in `queue.yaml` whenver there's a free host available.
+If you delete entries before Pegasus pulls it, they will not execute.
+If you add entreis to `queue.yaml`, they will execute.
+
+#### But that's a race condition on `queue.yaml`.
+
+Lock mode will lock `queue.yaml` and launch a command line editor for you.
+
+```console
+$ cargo run -- l --editor nvim  # l stands for Lock
+```
+
+When we save and exit, the lock is released and Pegasus is free again to read it.
+
+#### What if Pegasus terminates while I'm editing `queue.yaml`?
+
+Enable daemon mode, and Pegasus will not terminate even if `queue.yaml` is empty. It will wait for you to populate `queue.yaml` again, and execute them.
+
+```console
+$ cargo run -- q --daemon
+```
