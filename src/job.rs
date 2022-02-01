@@ -66,7 +66,7 @@ pub async fn get_one_job() -> Option<Vec<Cmd>> {
     loop {
         let queue_file = LockedFile::acquire("lock", "queue.yaml").await;
         let read_handle = queue_file.read_handle();
-        let job_specs: Result<Vec<JobSpec>, _> = serde_yaml::from_reader(&read_handle);
+        let job_specs: Result<Vec<JobSpec>, _> = serde_yaml::from_reader(read_handle);
         match job_specs {
             Ok(mut job_specs) => {
                 if job_specs.is_empty() {
@@ -78,7 +78,6 @@ pub async fn get_one_job() -> Option<Vec<Cmd>> {
 
                 // Check if it has the key 'command'.
                 if !job_spec.0.0.contains_key("command") {
-                    job_specs.insert(0, job_spec);
                     eprintln!("Job at the head of the queue has no 'command' key.");
                     eprintln!("Waiting 5 seconds before retry...");
                     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
