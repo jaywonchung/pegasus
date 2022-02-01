@@ -1,5 +1,5 @@
 <div align="center">
-<h1>Pegasus: A Multi-Node Parametrized Command Runner</h1>
+<h1>Pegasus: A Multi-Node Command Runner</h1>
 </div>
 
 Give me a bag of jobs and nodes. Then I run all of them.
