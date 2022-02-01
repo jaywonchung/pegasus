@@ -1,0 +1,112 @@
+//! SSH Hosts.
+//!
+//! One SSH connection is created for one `Host`. Each connection will run commands in parallel with
+//! other connections in its own tokio task.
+
+use itertools::sorted;
+use std::collections::HashMap;
+use std::fmt;
+use std::fs::File;
+use std::str::FromStr;
+
+use serde::Deserialize;
+use void::Void;
+
+use crate::serde::string_or_mapping;
+
+#[derive(Debug, Clone)]
+pub struct Host {
+    /// SSH hostname to connect to.
+    pub hostname: String,
+    /// Sub-host parameters used to fill in templates.
+    pub params: HashMap<String, String>,
+}
+
+impl Host {
+    fn new(hostname: String) -> Self {
+        Self {
+            hostname,
+            params: HashMap::new(),
+        }
+    }
+}
+
+impl fmt::Display for Host {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.params.is_empty() {
+            write!(f, "{}", self.hostname)?;
+        } else {
+            write!(f, "{}(", self.hostname)?;
+            for (i, (key, value)) in sorted(self.params.iter()).enumerate() {
+                if i == 0 {
+                    write!(f, "{}={}", key, value)?;
+                } else {
+                    write!(f, ",{}={}", key, value)?;
+                }
+            }
+            write!(f, ")")?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct HostSpec(#[serde(deserialize_with = "string_or_mapping")] HostSpecInner);
+
+#[derive(Debug, Deserialize)]
+#[serde(transparent)]
+struct HostSpecInner(HashMap<String, Vec<String>>);
+
+impl FromStr for HostSpecInner {
+    type Err = Void;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut map = HashMap::new();
+        map.insert("hostname".to_string(), vec![s.to_string()]);
+        Ok(Self(map))
+    }
+}
+
+pub fn get_hosts() -> Vec<Host> {
+    // Read and parse hosts.yaml to a vector of HostSpec objects.
+    let hosts_file = File::open("hosts.yaml").expect("Failed to open hosts.yaml");
+    let host_specs: Vec<HostSpec> =
+        serde_yaml::from_reader(hosts_file).expect("Failed to parse hosts.yaml");
+
+    // All entries that are parametrized (i.e., not bare strings)
+    // should have the key 'hostname'.
+    if !host_specs
+        .iter()
+        .all(|spec| spec.0 .0.contains_key("hostname"))
+    {
+        panic!("A parametrized entry in hosts.yaml is missing the 'hostname' key.");
+    }
+
+    // Cartesian product.
+    let mut hosts = Vec::with_capacity(host_specs.len());
+    // Each spec is completely independent. Each spec will expand to `expanded` and they'll
+    // simply concatenate to form the final `hosts` vector.
+    for HostSpec(HostSpecInner(mut spec)) in host_specs {
+        let mut expanded = vec![];
+        // We checked before that every `spec` has the key 'hostname'.
+        for hostname in spec.remove("hostname").unwrap() {
+            expanded.push(Host::new(hostname));
+        }
+        // For each parameter (String -> Vec<String>), the size of `expanded` will increase
+        // by the number of possible values.
+        for (key, values) in spec {
+            let mut part_expanded = Vec::with_capacity(values.len());
+            for host in expanded {
+                for value in values.iter() {
+                    let mut host = host.clone();
+                    host.params.insert(key.clone(), value.clone());
+                    part_expanded.push(host);
+                }
+            }
+            expanded = part_expanded;
+        }
+        hosts.push(expanded);
+    }
+
+    hosts.into_iter().flatten().collect()
+}
