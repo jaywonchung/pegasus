@@ -2,7 +2,7 @@
 <h1>Pegasus: A Multi-Node Command Runner</h1>
 </div>
 
-Give me a bag of jobs and nodes. Then I run all of them.
+Run a list of commands on a set of SSH nodes. With a bit of optional parametrization.
 
 ## Demo
 
