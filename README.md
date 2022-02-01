@@ -165,11 +165,12 @@ Lock mode will lock `queue.yaml` and launch a command line editor for you.
 $ cargo run -- l --editor nvim  # l stands for Lock
 ```
 
-When we save and exit, the lock is released and Pegasus is free again to read it.
+Editor priority is `--editor` > `$EDITOR` > `vim`.
+When you save and exit, the queue lock is released and Pegasus is allowed access.
 
 #### Q. What if Pegasus terminates while I'm editing `queue.yaml`?
 
-Enable daemon mode, and Pegasus will not terminate even if `queue.yaml` is empty. It will wait for you to populate `queue.yaml` again, and execute them.
+Enable daemon mode, and Pegasus will not terminate even if `queue.yaml` is empty. It will stand waiting for you to populate `queue.yaml` again, and execute them.
 
 ```console
 $ cargo run -- q --daemon
