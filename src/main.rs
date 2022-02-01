@@ -12,6 +12,7 @@ mod sync;
 use std::process::Stdio;
 
 use clap::Parser;
+use colourado::{ColorPalette, PaletteType};
 use futures::future::join_all;
 use handlebars::Handlebars;
 use openssh::{KnownHosts, Session};
@@ -19,6 +20,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::ChildStdout;
 use tokio::sync::broadcast;
 use colored::ColoredString;
+use itertools::zip;
 
 use crate::config::{Config, Mode};
 use crate::host::get_hosts;
@@ -65,11 +67,12 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
 
     let mut tasks = vec![];
     let num_hosts = hosts.len();
-    for host in hosts.iter() {
+    let palette = ColorPalette::new(num_hosts as u32, PaletteType::Pastel, false);
+    for (color, host) in zip(palette.colors, hosts.iter()) {
         let mut command_rx = command_tx.subscribe();
         let notify_tx = notify_tx.clone();
         let host = host.clone();
-        let colorhost = host.to_pretty();
+        let colorhost = host.prettify(color);
         tasks.push(tokio::spawn(async move {
             // Open a new SSH session with the host.
             let session = Session::connect(&host.hostname, KnownHosts::Add)
@@ -165,12 +168,13 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
 
     let mut tasks = vec![];
     let mut command_txs = vec![];
+    let palette = ColorPalette::new(hosts.len() as u32, PaletteType::Pastel, false);
     for (host_index, host) in hosts.iter().enumerate() {
         let (command_tx, command_rx) = flume::bounded::<Cmd>(1);
         command_txs.push(command_tx);
         let notify_tx = notify_tx.clone();
         let host = host.clone();
-        let colorhost = host.to_pretty();
+        let colorhost = host.prettify(palette.colors[host_index]);
         tasks.push(tokio::spawn(async move {
             // Open a new SSH session with the host.
             let session = Session::connect(&host.hostname, KnownHosts::Add)

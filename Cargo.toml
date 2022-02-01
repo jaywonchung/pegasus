@@ -19,4 +19,4 @@ itertools = "0.10.3"
 clap = { version = "3.0.13", features = ["derive"] }
 handlebars = "3"
 colored = "2"
-random_color = "0.6.1"
+colourado = "0.2.0"

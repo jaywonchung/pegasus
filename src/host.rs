@@ -4,6 +4,8 @@
 //! other connections in its own tokio task.
 
 use itertools::sorted;
+// use random_color::{RandomColor, Luminosity, Color};
+use colourado::Color;
 use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
@@ -33,9 +35,16 @@ impl Host {
 
     /// For pretty printing the host name.
     /// Surrounds with brackets and colors it with a random color.
-    pub fn to_pretty(&self) -> ColoredString {
-        let color = random_color::RandomColor::new().to_rgb_array();
-        format!("[{}]", self).truecolor(color[0], color[1], color[2])
+    pub fn prettify(&self, color: Color) -> ColoredString {
+        // let color = RandomColor::new()
+        //     .hue(Color::Green)
+        //     .luminosity(Luminosity::Light)
+        //     .alpha(0.8)
+        //     .to_rgb_array();
+        let r = (color.red * 256.0) as u8;
+        let g = (color.green * 256.0) as u8;
+        let b = (color.blue * 256.0) as u8;
+        format!("[{}]", self).truecolor(r, g, b)
     }
 }
 
