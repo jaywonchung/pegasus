@@ -22,6 +22,8 @@ To use Pegasus,
 2. Setup passwordless SSH for your nodes.
 3. Populate `hosts.yaml` and `queue.yaml`, and run Pegasus.
 
+Pegasus will remove one entry at a time from `queue.yaml` and move it to `consumed.yaml` as it executes it.
+
 ### Queue Mode: Getting a Bag of Jobs Done
 
 Run four Python commands using two nodes.
