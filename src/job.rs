@@ -78,7 +78,7 @@ pub async fn get_one_job() -> Option<Vec<Cmd>> {
                 let job_spec = job_specs.remove(0);
 
                 // Check if it has the key 'command'.
-                if !job_spec.0 .0.contains_key("command") {
+                if !job_spec.0.0.contains_key("command") {
                     job_specs.insert(0, job_spec);
                     eprintln!("Job at the head of the queue has no 'command' key.");
                     serde_yaml::to_writer(queue_file.write_handle(), &job_specs)
