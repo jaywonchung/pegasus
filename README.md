@@ -58,7 +58,7 @@ Run identical setup commands for multiple nodes.
 # queue.yaml
 - mkdir workspace
 - cd workspace && git clone https://github.com/jaywonchung/dotfiles.git
-- source workspace/dotfiles/install.sh
+- . workspace/dotfiles/install.sh
 ```
 
 ```console
