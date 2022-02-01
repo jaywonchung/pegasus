@@ -45,12 +45,6 @@ impl Cmd {
     }
 }
 
-impl fmt::Display for Cmd {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.command)
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct JobSpec(#[serde(deserialize_with = "string_or_mapping")] JobSpecInner);
 
