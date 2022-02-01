@@ -132,16 +132,19 @@ How many commands will execute in Queue mode?
 # queue.yaml
 - echo hi from {{ hostname }}
 - command:
-    - for i in $(seq 1 {{ high }}); do echo $i; sleep {{ laziness }}; done
+    - for i in $(seq {{ low }} {{ high }}); do echo $i; sleep {{ laziness }}; done
     - echo bye from {{ hostname }}
-  high:
+  low:
     - 1
     - 2
+  high:
     - 3
     - 4
 ```
 
-Note that although `echo bye from {{ hostname }}` doesn't really use the `high` parameter, it will run four times.
+Note that although `echo bye from {{ hostname }}` doesn't really use the `low` or `high` parameters, it will run `2 * 2 = 4` times regardless.
+
+The answer is `1 + 2 * 2 * 2`.
 
 ### Modifying the Queue
 
