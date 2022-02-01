@@ -80,8 +80,6 @@ pub async fn get_one_job() -> Option<Vec<Cmd>> {
                 if !job_spec.0.0.contains_key("command") {
                     job_specs.insert(0, job_spec);
                     eprintln!("Job at the head of the queue has no 'command' key.");
-                    serde_yaml::to_writer(queue_file.write_handle(), &job_specs)
-                        .expect("Failed to update queue.yaml");
                     eprintln!("Waiting 5 seconds before retry...");
                     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                     continue;
