@@ -101,11 +101,7 @@ If you can parametrize nodes, why not commands?
 # queue.yaml
 - command:
     - docker exec {{ container }} python train.py --bs {{ bs }}
-  bs:
-    - 8
-    - 16
-    - 32
-    - 64
+  bs: [8, 16, 32, 64]
 ```
 
 This results in the exact same jobs with the example above.
@@ -158,7 +154,7 @@ If you add entreis to `queue.yaml`, they will execute.
 
 Think about when the number of remaining commands is less than the number of free nodes. Without a way to submit more jobs to Pegasus, those free nodes will stay idle until all the commands finish and you start a fresh new instance of Pegasus.
 
-By providing a way to add to the queue while commands are still running, users may achieve higher node utilization. Deleting from the queue is just a byproduct.
+By providing a way to add to the queue while commands are still running, users may achieve higher node utilization. Being able to delete from the queue is just a byproduct; adding to the queue is the key feature.
 
 #### Q. But that's a race condition on `queue.yaml`.
 
@@ -169,9 +165,9 @@ $ cargo run -- l --editor nvim  # l stands for Lock
 ```
 
 Editor priority is `--editor` > `$EDITOR` > `vim`.
-When you save and exit, the queue lock is released and Pegasus is allowed access.
+When you save and exit, the queue lock is released and Pegasus is allowed access to `queue.yaml`.
 
-#### Q. What if Pegasus terminates while I'm editing `queue.yaml`?
+#### Q. What if Pegasus terminates before I add to `queue.yaml`?
 
 Enable daemon mode, and Pegasus will not terminate even if `queue.yaml` is empty. It will stand waiting for you to populate `queue.yaml` again, and execute them.
 
