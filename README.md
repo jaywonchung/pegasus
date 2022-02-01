@@ -4,6 +4,10 @@
 
 Give me a bag of jobs and nodes. Then I run all of them.
 
+## Demo
+
+[![asciicast](https://asciinema.org/a/T907oftlXQP0QWqLnF43IkCjo.svg)](https://asciinema.org/a/T907oftlXQP0QWqLnF43IkCjo)
+
 ## Features
 
 - Passwordless SSH is all you need.
