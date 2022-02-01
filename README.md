@@ -145,6 +145,12 @@ Pegasus removes the first entry in `queue.yaml` whenver there's a free host avai
 If you delete entries before Pegasus pulls it, they will not execute.
 If you add entreis to `queue.yaml`, they will execute.
 
+#### Q. Why do I need this?
+
+Think about when the number of remaining commands is less than the number of free nodes. Without a way to submit more jobs to Pegasus, those free nodes will stay idle until all the commands finish and you start a fresh new instance of Pegasus.
+
+By providing a way to add to the queue while commands are still running, users may achieve higher node utilization. Deleting from the queue is just a byproduct.
+
 #### Q. But that's a race condition on `queue.yaml`.
 
 Lock mode will lock `queue.yaml` and launch a command line editor for you.
