@@ -1,77 +1,137 @@
-# Pegasus
+<div align="center">
+<h1>Pegasus: A Multi-Node Parametrized Command Runner</h1>
+</div>
 
-A simple multi-node command runner.
+Give me a bag of jobs and nodes. Then I run all of them.
 
-## TODO
+## Features
 
-- Host and job parametrization
-  - A single host split into multiple hosts based on some parameter.
-  - For the use case right now, add 'container'.
+- Passwordless SSH is all you need.
+- **Simple** config for simple use cases, **flexible** config for advanced ones.
+- Two modes:
+  - **Broadcast** mode runs each command on every node.
+  - **Queue** mode runs each command on the next free node.
+- Modify the queue **while** Pegasus is running.
+- **Parametrize** hosts and commands.
+
+## Getting Started with Examples
+
+To use Pegasus,
+
+1. Clone this repo (I'll soon release binaries, too).
+2. Setup passwordless SSH for your nodes.
+
+### Queue Mode: Getting a Bag of Jobs Done
+
+Run four Python commands using two nodes.
 
 ```yaml
 # hosts.yaml
-- clgpu012
-  - container
-    - zeus0
-    - zeus1
-- clgpu013
-  - container
-    - zeus0
-    - zeus1
+- node-1
+- node-2
 ```
 
 ```yaml
-# jobs.yaml
-- docker exec '{{ container }} python train.py | tee log-run{{ run }}'
-  - run
+# queue.yaml
+- . /opt/miniconda3/etc/profile.d/conda.sh; python train.py --bs 8
+- . /opt/miniconda3/etc/profile.d/conda.sh; python train.py --bs 16
+- . /opt/miniconda3/etc/profile.d/conda.sh; python train.py --bs 32
+- . /opt/miniconda3/etc/profile.d/conda.sh; python train.py --bs 64
+```
+
+```console
+$ cargo run -- q  # stands for Queue
+```
+
+### Broadcast Mode: Terraforming Nodes
+
+Run identical setup commands for multiple nodes.
+
+```yaml
+# queue.yaml
+- mkdir workspace
+- cd workspace && git clone https://github.com/jaywonchung/dotfiles.git
+- source workspace/dotfiles/install.sh
+```
+
+```console
+$ cargo run -- b  # stands for Broadcast
+```
+
+### Splitting Nodes with Parameters
+
+Split nodes into two sub-nodes. Below, *four* SSH connections are kept, and *four* commands run in parallel.
+
+```yaml
+# hosts.yaml
+- hostname:
+    - node-1
+    - node-2
+  container:
+    - gpu0
+    - gpu1
+```
+
+When parametrizing nodes, just make sure you specify the `hostname` key.
+
+You can use these parameters in your commands. By the way, the templating engine is Handlebars.
+
+```yaml
+# queue.yaml
+- docker exec {{ container }} python train.py --bs 8
+- docker exec {{ container }} python train.py --bs 16
+- docker exec {{ container }} python train.py --bs 32
+- docker exec {{ container }} python train.py --bs 64
+```
+
+Four sub-nodes and four jobs. So all jobs will start executing at the same time.
+
+### Parametrizing Commands
+
+If you can parametrize nodes, why not commands?
+
+```yaml
+# queue.yaml
+- command:
+    - docker exec {{ container }} python train.py --bs {{ bs }}
+  bs:
+    - 8
+    - 16
+    - 32
+    - 64
+```
+
+This results in the exact same jobs with the example above.
+When parametrizing commands, just make sure you specify the `command` key.
+
+### Quiz
+
+How many commands will execute in Queue mode?
+
+```yaml
+# hosts.yaml
+- hostname:
+    - node-1
+    - node-2
+  laziness:
+    - 1
+- hostname:
+    - node-3
+  laziness:
+    - 2
+```
+
+```yaml
+# queue.yaml
+- echo hi from {{ hostname }}
+- command:
+    - for i in $(seq 1 {{ high }}); do echo $i; sleep {{ laziness }}; done
+    - echo bye from {{ hostname }}
+  high:
     - 1
     - 2
     - 3
+    - 4
 ```
 
-
-```rust
-//! Users supply Pegasus by populating `hosts.yaml`. Basic use:
-//!
-//! ```yaml
-//! # hosts.yaml
-//! - node-1
-//! - node-2
-//! - node-3
-//! - node-4
-//! ```
-//!
-//! This will create four hosts, which means that four commands will run in parallel, one in each
-//! host.
-//!
-//! You may also parametrize hosts:
-//!
-//! ```yaml
-//! # hosts.yaml
-//! - hostname:
-//!     - node-1
-//!     - node-2
-//!   container:
-//!     - zeus0
-//!     - zeus1
-//! ```
-//!
-//! This specifies `2 * 2 = 4` hosts: (node-1, zeus0), (node-1, zeus1), (node-2, zeus0), (node-2, zeus1)
-//! Values under the required `hostname` key will serve as the SSH hostname, and all other parameters,
-//! along with command parameters, fill in command templates.
-//!
-//! ```yaml
-//! # queue.yaml
-//! - command:
-//!     - docker exec {{ container }} python train.py -bs {{ bs }} | tee /nfs/logs/train-bs{{ bs }}-run{{ run }}.log
-//!   run:
-//!     - 1
-//!     - 2
-//!     - 3
-//!   bs:
-//!     - 32
-//!     - 64
-//! ```
-//!
-//! This will run `3 * 2 = 6` jobs on 4 hosts.
-```
+Note that although `echo bye from {{ hostname }}` doesn't really use the `high` parameter, it will run four times.
