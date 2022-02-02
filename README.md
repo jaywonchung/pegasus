@@ -14,8 +14,8 @@ Run a list of commands on a set of SSH nodes. With a bit of optional parametriza
 - **Simple** config for simple use cases, **flexible** config for advanced ones.
 - Two modes:
   - **Broadcast** mode runs each command on every node.
-  - **Queue** mode runs a command once on the next free node.
-- Modify the queue **while** Pegasus is running.
+  - **Queue** mode runs each command once on the next free node.
+- Modify the **file-based queue** (`queue.yaml`) while Pegasus is running.
 - **Parametrize** hosts and commands.
 
 ## Getting Started with Examples
