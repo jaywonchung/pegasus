@@ -135,22 +135,21 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
                     .map(|res| res.unwrap());
                 // Check if all commands exited successfully.
                 if !exit_codes.all(|code| matches!(code, Some(0))) {
-                    eprint!("Some commands exited with non-zero status. ");
+                    eprint!("[Pegasus] Some commands exited with non-zero status. ");
                     if cli.error_aborts {
-                        eprintln!("Aborting.");
+                        eprintln!("[Pegasus] Aborting.");
                         break 'sched;
                     } else {
-                        eprintln!("Just continuing.");
+                        eprintln!("[Pegasus] Just continuing.");
                     }
                 }
             }
         } else if cli.daemon {
             // The queue file is empty at the moment, but since we're in daemon mode, wait.
-            eprintln!("queue.yaml is empty. Waiting for 5 seconds...");
             tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
         } else {
             // We drained everything in the queue file, so exit.
-            eprintln!("queue.yaml is empty. Pegasus will exit when the running command finishes.");
+            eprintln!("[Pegasus] queue.yaml drained, breaking out of scheduler loop");
             break 'sched;
         }
     }
@@ -241,11 +240,10 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
             }
         } else if cli.daemon {
             // The queue file is empty at the moment, but since we're in daemon mode, wait.
-            eprintln!("queue.yaml is empty. Waiting for 5 seconds...");
             tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
         } else {
             // We drained everything in the queue file, so exit.
-            eprintln!("queue.yaml is empty. Pegasus will exit when all running commands finish.");
+            eprintln!("[Pegasus] queue.yaml drained, breaking out of scheduler loop");
             break;
         }
     }
@@ -259,33 +257,37 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
     Ok(())
 }
 
+async fn run_lock(cli: &Config) {
+    let editor = match &cli.editor {
+        Some(editor) => editor.into(),
+        None => match std::env::var("EDITOR") {
+            Ok(editor) => editor,
+            Err(_) => "vim".into(),
+        }
+    };
+    let _queue_file = LockedFile::acquire("lock", "queue.yaml").await;
+    let mut command = std::process::Command::new(&editor);
+    command
+        .arg("queue.yaml")
+        .status()
+        .expect(&format!("Failed to execute '{} queue.yaml'.", editor));
+}
+
 #[tokio::main]
 async fn main() -> Result<(), openssh::Error> {
     let cli = Config::parse();
 
     match cli.mode {
         Mode::Broadcast => {
-            eprintln!("Running in broadcast mode!");
+            eprintln!("[Pegasus] Running in broadcast mode!");
             run_broadcast(&cli).await?;
         }
         Mode::Queue => {
-            eprintln!("Running in queue mode!");
+            eprintln!("[Pegasus] Running in queue mode!");
             run_queue(&cli).await?;
         }
         Mode::Lock => {
-            let editor = match cli.editor.as_ref() {
-                Some(editor) => editor.into(),
-                None => match std::env::var("EDITOR") {
-                    Ok(editor) => editor,
-                    Err(_) => "vim".into(),
-                },
-            };
-            let _queue_file = LockedFile::acquire("lock", "queue.yaml").await;
-            let mut command = std::process::Command::new(editor);
-            command
-                .arg("queue.yaml")
-                .status()
-                .expect("Failed to execute the editor.");
+            run_lock(&cli).await;
         }
     };
 

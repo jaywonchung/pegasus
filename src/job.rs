@@ -78,8 +78,8 @@ pub async fn get_one_job() -> Option<Vec<Cmd>> {
 
                 // Check if it has the key 'command'.
                 if !job_spec.0.0.contains_key("command") {
-                    eprintln!("Job at the head of the queue has no 'command' key.");
-                    eprintln!("Waiting 5 seconds before retry...");
+                    eprintln!("[Pegasus] Job at the head of the queue has no 'command' key.");
+                    eprintln!("[Pegasus] Waiting 5 seconds before retry...");
                     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                     continue;
                 }
@@ -134,11 +134,11 @@ pub async fn get_one_job() -> Option<Vec<Cmd>> {
             Err(err) => {
                 error_count += 1;
                 if error_count > 10 {
-                    eprintln!("Failed to parse queue.yaml too many times. Assuming empty queue.");
+                    eprintln!("[Pegasus] Failed to parse queue.yaml too many times. Assuming empty queue.");
                     return None;
                 }
-                eprintln!("Failed to parse queue.yaml: {}", err);
-                eprintln!("Waiting 5 seconds before retry...");
+                eprintln!("[Pegasus] Failed to parse queue.yaml: {}", err);
+                eprintln!("[Pegasus] Waiting 5 seconds before retry...");
                 tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
             }
         }
