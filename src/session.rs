@@ -4,7 +4,8 @@ use colored::ColoredString;
 use colourado::Color;
 use openssh::{KnownHosts, Session as SSHSession};
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::ChildStdout;
+use tokio::process::{ChildStdout, ChildStderr};
+use futures::future::join;
 
 use crate::host::Host;
 
@@ -35,9 +36,13 @@ impl Session {
             .arg("-c")
             .raw_arg(format!("'{}'", &job))
             .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .spawn()
             .expect("Failed to spawn ssh command.");
-        self.stream_stdout(process.stdout().as_mut().unwrap()).await;
+        join(
+            self.stream_stdout(process.stdout().as_mut().unwrap()),
+            self.stream_stderr(process.stderr().as_mut().unwrap())
+        ).await;
         let status = process
             .wait()
             .await
@@ -47,6 +52,35 @@ impl Session {
     }
 
     async fn stream_stdout(&self, stdout: &mut ChildStdout) {
+        let mut stdout_reader = BufReader::new(stdout);
+        let mut line_buf = String::with_capacity(256);
+        loop {
+            let buflen;
+            {
+                let buf = stdout_reader
+                    .fill_buf()
+                    .await
+                    .expect("Failed to read stdout");
+                buflen = buf.len();
+                // An empty buffer means that the stream has reached an EOF.
+                if buf.is_empty() {
+                    break;
+                }
+                for c in buf.iter().map(|c| *c as char) {
+                    match c {
+                        '\r' | '\n' => {
+                            println!("{} {}", self.colorhost, line_buf);
+                            line_buf.clear();
+                        }
+                        _ => line_buf.push(c),
+                    };
+                }
+            }
+            stdout_reader.consume(buflen);
+        }
+    }
+
+    async fn stream_stderr(&self, stdout: &mut ChildStderr) {
         let mut stdout_reader = BufReader::new(stdout);
         let mut line_buf = String::with_capacity(256);
         loop {
