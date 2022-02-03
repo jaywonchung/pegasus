@@ -86,10 +86,11 @@ impl Session {
                         // SAFETY: Splitting the buffer at `error.valid_up_to()` guarantees
                         // that `valid` is valid.
                         unsafe { line_buf.push_str(std::str::from_utf8_unchecked(valid)); }
-                        line_buf.push_str("\u{FFFD}");
                         if let Some(invalid_sequence_length) = error.error_len() {
+                            line_buf.push_str("\u{FFFD}");
                             buf = &after_valid[invalid_sequence_length..];
                         } else {
+                            // We don't know if it's actually an invalid UTF-8 character.
                             break
                         }
                     }
