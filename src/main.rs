@@ -22,6 +22,7 @@ use crate::config::{Config, Mode};
 use crate::host::get_hosts;
 use crate::job::{get_one_job, Cmd};
 use crate::sync::LockedFile;
+use crate::session::Session;
 
 async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
     let hosts = get_hosts();
@@ -40,7 +41,7 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
         let notify_tx = notify_tx.clone();
         tasks.push(tokio::spawn(async move {
             // Open a new SSH session with the host.
-            let session = crate::session::Session::connect(host, color).await;
+            let session = Session::connect(host, color).await;
             // Handlebars registry for filling in parameters.
             let mut registry = Handlebars::new();
             while let Ok(job) = command_rx.recv().await {
@@ -119,7 +120,7 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
         let notify_tx = notify_tx.clone();
         tasks.push(tokio::spawn(async move {
             // Open a new SSH session with the host.
-            let session = crate::session::Session::connect(host, color).await;
+            let session = Session::connect(host, color).await;
             // Handlebars registry for filling in parameters.
             let mut registry = Handlebars::new();
             // Request a new command from the scheduler.
