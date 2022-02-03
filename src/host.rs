@@ -11,9 +11,9 @@ use std::fmt;
 use std::fs::File;
 use std::str::FromStr;
 
+use colored::*;
 use serde::Deserialize;
 use void::Void;
-use colored::*;
 
 use crate::serde::string_or_mapping;
 
@@ -39,16 +39,16 @@ impl Host {
         let r = (color.red * 256.0) as u8;
         let g = (color.green * 256.0) as u8;
         let b = (color.blue * 256.0) as u8;
-        format!("[{}]", self).truecolor(r, g, b)
+        format!("{}", self).truecolor(r, g, b)
     }
 }
 
 impl fmt::Display for Host {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.params.is_empty() {
-            write!(f, "{}", self.hostname)?;
+            write!(f, "[{}]", self.hostname)?;
         } else {
-            write!(f, "{}(", self.hostname)?;
+            write!(f, "[{} (", self.hostname)?;
             for (i, (key, value)) in sorted(self.params.iter()).enumerate() {
                 if i == 0 {
                     write!(f, "{}={}", key, value)?;
@@ -56,7 +56,7 @@ impl fmt::Display for Host {
                     write!(f, ",{}={}", key, value)?;
                 }
             }
-            write!(f, ")")?;
+            write!(f, ")]")?;
         }
         Ok(())
     }

@@ -77,7 +77,7 @@ pub async fn get_one_job() -> Option<Vec<Cmd>> {
                 let job_spec = job_specs.remove(0);
 
                 // Check if it has the key 'command'.
-                if !job_spec.0.0.contains_key("command") {
+                if !job_spec.0 .0.contains_key("command") {
                     eprintln!("[Pegasus] Job at the head of the queue has no 'command' key.");
                     eprintln!("[Pegasus] Waiting 5 seconds before retry...");
                     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;

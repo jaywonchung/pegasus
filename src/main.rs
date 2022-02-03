@@ -8,53 +8,20 @@ mod host;
 mod job;
 // Synchronization primitives.
 mod sync;
-
-use std::process::Stdio;
+// SSH session wrapper.
+mod session;
 
 use clap::Parser;
 use colourado::{ColorPalette, PaletteType};
 use futures::future::join_all;
 use handlebars::Handlebars;
-use openssh::{KnownHosts, Session};
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::ChildStdout;
-use tokio::sync::broadcast;
-use colored::ColoredString;
 use itertools::zip;
+use tokio::sync::broadcast;
 
 use crate::config::{Config, Mode};
 use crate::host::get_hosts;
 use crate::job::{get_one_job, Cmd};
 use crate::sync::LockedFile;
-
-async fn stream_stdout(colorhost: &ColoredString, stdout: &mut ChildStdout) {
-    let mut stdout_reader = BufReader::new(stdout);
-    let mut line_buf = String::with_capacity(256);
-    loop {
-        let buflen;
-        {
-            let buf = stdout_reader
-                .fill_buf()
-                .await
-                .expect("Failed to read stdout");
-            buflen = buf.len();
-            // An empty buffer means that the stream has reached an EOF.
-            if buf.is_empty() {
-                break;
-            }
-            for c in buf.iter().map(|c| *c as char) {
-                match c {
-                    '\r' | '\n' => {
-                        println!("{} {}", colorhost, line_buf);
-                        line_buf.clear();
-                    }
-                    _ => line_buf.push(c),
-                };
-            }
-        }
-        stdout_reader.consume(buflen);
-    }
-}
 
 async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
     let hosts = get_hosts();
@@ -67,57 +34,28 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
 
     let mut tasks = vec![];
     let num_hosts = hosts.len();
-    let palette = ColorPalette::new(num_hosts as u32, PaletteType::Pastel, false);
-    for (color, host) in zip(palette.colors, hosts.iter()) {
+    let colors = ColorPalette::new(num_hosts as u32, PaletteType::Pastel, false).colors;
+    for (color, host) in zip(colors, hosts) {
         let mut command_rx = command_tx.subscribe();
         let notify_tx = notify_tx.clone();
-        let host = host.clone();
-        let colorhost = host.prettify(color);
         tasks.push(tokio::spawn(async move {
             // Open a new SSH session with the host.
-            let session = Session::connect(&host.hostname, KnownHosts::Add)
-                .await
-                .expect(&format!("[{}] Failed to connect to host.", host));
-            eprintln!("{} Connected to host.", colorhost);
+            let session = crate::session::Session::connect(host, color).await;
+            // Handlebars registry for filling in parameters.
             let mut registry = Handlebars::new();
             while let Ok(job) = command_rx.recv().await {
-                let job = job.fill_template(&mut registry, &host);
-                println!("{} === run '{}' ===", colorhost, &job);
-                let mut cmd = session.command("sh");
-                let mut process = cmd
-                    .arg("-c")
-                    .raw_arg(format!("'{}'", &job))
-                    .stdout(Stdio::piped())
-                    .spawn()
-                    .unwrap();
-                stream_stdout(
-                    &colorhost,
-                    process.stdout().as_mut().unwrap(),
-                )
-                .await;
-                let exitcode = process
-                    .wait()
-                    .await
-                    .expect(&format!("[{}] Waiting on child errored.", host))
-                    .code();
-                println!(
-                    "{} === done ({}) ===",
-                    colorhost,
-                    match exitcode {
-                        Some(i) => format!("exit code: {}", i),
-                        None => "killed by signal".into(),
-                    }
-                );
+                let job = job.fill_template(&mut registry, &session.host);
+                let exitcode = session.run(job).await;
                 notify_tx
                     .send_async(exitcode)
                     .await
                     .expect("Failed to send exit code.");
             }
-            eprintln!("{} Terminating connection.", colorhost);
         }));
     }
     drop(notify_tx);
 
+    // TODO: Have the scheduling loop run at least until all commands finish.
     'sched: loop {
         if let Some(jobs) = get_one_job().await {
             // One job might consist of multiple jobs after parameterization.
@@ -153,8 +91,13 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
             break 'sched;
         }
     }
+
+    // After this, tasks that call recv on command_tx will get an Err, gracefully terminating the
+    // SSH session.
     drop(command_tx);
 
+    // The scheduling loop has terminated, but there should be commands still running.
+    // Wait for all of them to finish.
     join_all(tasks).await;
 
     Ok(())
@@ -163,64 +106,40 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
 async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
     let hosts = get_hosts();
 
-    let (notify_tx, notify_rx) = flume::bounded(1);
+    // MPMC channel (used as MPSC) for requesting1 the scheduling loop a new command.
+    let (notify_tx, notify_rx) = flume::bounded(hosts.len());
 
     let mut tasks = vec![];
     let mut command_txs = vec![];
-    let palette = ColorPalette::new(hosts.len() as u32, PaletteType::Pastel, false);
-    for (host_index, host) in hosts.iter().enumerate() {
+    let colors = ColorPalette::new(hosts.len() as u32, PaletteType::Pastel, false).colors;
+    for ((host_index, host), color) in zip(hosts.into_iter().enumerate(), colors) {
+        // MPMC channel (used as SPSC) to send the actual command to the SSH session task.
         let (command_tx, command_rx) = flume::bounded::<Cmd>(1);
         command_txs.push(command_tx);
         let notify_tx = notify_tx.clone();
-        let host = host.clone();
-        let colorhost = host.prettify(palette.colors[host_index]);
         tasks.push(tokio::spawn(async move {
             // Open a new SSH session with the host.
-            let session = Session::connect(&host.hostname, KnownHosts::Add)
-                .await
-                .expect(&format!("[{}] Failed to connect to host.", host));
-            eprintln!("{} Connected to host.", colorhost);
+            let session = crate::session::Session::connect(host, color).await;
+            // Handlebars registry for filling in parameters.
             let mut registry = Handlebars::new();
-            // Request a command to run from the scheduler.
+            // Request a new command from the scheduler.
             if notify_tx.send_async(host_index).await.is_ok() {
                 while let Ok(job) = command_rx.recv_async().await {
-                    let job = job.fill_template(&mut registry, &host);
-                    println!("{} === run '{}' ===", colorhost, &job);
-                    let mut cmd = session.command("sh");
-                    let mut process = cmd
-                        .arg("-c")
-                        .raw_arg(format!("'{}'", &job))
-                        .stdout(Stdio::piped())
-                        .spawn()
-                        .unwrap();
-                    stream_stdout(
-                        &colorhost,
-                        process.stdout().as_mut().unwrap(),
-                    )
-                    .await;
-                    let exitcode = process
-                        .wait()
-                        .await
-                        .expect(&format!("[{}] Waiting on child errored.", host))
-                        .code();
-                    println!(
-                        "{} === done ({}) ===",
-                        colorhost,
-                        match exitcode {
-                            Some(i) => format!("exit code: {}", i),
-                            None => "killed by signal".into(),
-                        }
-                    );
+                    let job = job.fill_template(&mut registry, &session.host);
+                    // TODO: Queue mode currently doesn't care about the exit code.
+                    session.run(job).await;
                     if notify_tx.send_async(host_index).await.is_err() {
                         break;
                     }
                 }
             }
-            eprintln!("{} Terminating connection.", colorhost);
         }));
     }
     drop(notify_tx);
 
+    // TODO: Have the scheduling loop run at least until all commands finish.
+    // Wait for a command request first before we actually remove entries from
+    // queue.yaml.
     let mut host_index = notify_rx
         .recv_async()
         .await
@@ -247,6 +166,9 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
             break;
         }
     }
+
+    // After this, tasks that call recv on command_tx or send on notify_rx will get an Err,
+    // gracefully terminating the SSH session.
     drop(notify_rx);
     drop(command_txs);
 
@@ -263,7 +185,7 @@ async fn run_lock(cli: &Config) {
         None => match std::env::var("EDITOR") {
             Ok(editor) => editor,
             Err(_) => "vim".into(),
-        }
+        },
     };
     let _queue_file = LockedFile::acquire("lock", "queue.yaml").await;
     let mut command = std::process::Command::new(&editor);
