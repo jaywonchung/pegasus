@@ -52,7 +52,7 @@ $ cargo run -- q  # stands for Queue
 
 ### Broadcast Mode: Terraforming Nodes
 
-Run identical setup commands for multiple nodes.
+Run identical commands for multiple nodes.
 
 ```yaml
 # queue.yaml
@@ -65,9 +65,9 @@ Run identical setup commands for multiple nodes.
 $ cargo run -- b  # stands for Broadcast
 ```
 
-### Splitting Nodes with Parameters
+### Parallelizing Execution with Node Parameters
 
-Split nodes into two sub-nodes. Below, *four* SSH connections are kept, and *four* commands run in parallel.
+Split nodes into sub-nodes that run commands in parallel. Below, *four* SSH connections are kept, and *four* commands run in parallel.
 
 ```yaml
 # hosts.yaml
@@ -93,7 +93,7 @@ You can use these parameters in your commands. By the way, the templating engine
 
 Four sub-nodes and four jobs. So all jobs will start executing at the same time.
 
-### Parametrizing Commands
+### Parametrizing Commands for Conciseness
 
 If you can parametrize nodes, why not commands?
 
@@ -142,7 +142,7 @@ Note that although `echo bye from {{ hostname }}` doesn't really use the `low` o
 
 The answer is `1 + 2 * 2 * 2`.
 
-### Modifying the Queue
+### Lock Mode: Modifying the Queue
 
 `queue.yaml` is **actually** the queue.
 
