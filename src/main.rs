@@ -24,6 +24,7 @@ use crate::job::{get_one_job, Cmd};
 use crate::sync::LockedFile;
 use crate::session::Session;
 
+
 async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
     let hosts = get_hosts();
 
@@ -76,10 +77,10 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
                 if !exit_codes.all(|code| matches!(code, Some(0))) {
                     eprint!("[Pegasus] Some commands exited with non-zero status. ");
                     if cli.error_aborts {
-                        eprintln!("[Pegasus] Aborting.");
+                        eprintln!("Aborting.");
                         break 'sched;
                     } else {
-                        eprintln!("[Pegasus] Just continuing.");
+                        eprintln!("Just continuing.");
                     }
                 }
             }
