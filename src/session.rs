@@ -50,32 +50,57 @@ impl Session {
         status.code()
     }
 
-    async fn stream<B: AsyncRead + Unpin>(&self, stdout: B) {
-        let mut reader = BufReader::new(stdout);
+    async fn stream<B: AsyncRead + Unpin>(&self, stream: B) {
+        let mut reader = BufReader::new(stream);
         let mut line_buf = String::with_capacity(256);
         loop {
-            let buflen;
-            {
-                let buf = reader
-                    .fill_buf()
-                    .await
-                    .expect("Failed to read stdout");
-                buflen = buf.len();
-                // An empty buffer means that the stream has reached an EOF.
-                if buf.is_empty() {
-                    break;
-                }
-                for c in buf.iter().map(|c| *c as char) {
-                    match c {
-                        '\r' | '\n' => {
-                            println!("{} {}", self.colorhost, line_buf);
-                            line_buf.clear();
-                        }
-                        _ => line_buf.push(c),
-                    };
-                }
+            // Tracks the number of bytes consumed from the internal buffer.
+            let mut consumed_bytes = 0;
+            // Read into the internal buffer of `reader`.
+            let mut buf = reader
+                .fill_buf()
+                .await
+                .expect("Failed to read from stream");
+            // An empty buffer means that the stream has reached an EOF.
+            if buf.is_empty() {
+                break;
             }
-            reader.consume(buflen);
+            // Decode bytes into a UTF-8 string (into `line_buf`).
+            loop {
+                match std::str::from_utf8(buf) {
+                    Ok(valid) => {
+                        line_buf.push_str(valid);
+                        // We add, not assign, because `buf` might have been from the previous
+                        // iteration of the inner decode loop (the case when an invalid UTF-8
+                        // character was detected and we skipped error_len() bytes).
+                        consumed_bytes += buf.len();
+                        break
+                    },
+                    Err(error) => {
+                        // We'll consume only up to the valid byte and leave the rest of the bytes
+                        // (excluding errored bytes) to the next iteration. This is because we're
+                        // incrementally decoding a stream of bytes into UTF-8, and a UTF-8
+                        // character might have been cut off at the end.
+                        consumed_bytes += error.valid_up_to();
+                        let (valid, after_valid) = buf.split_at(consumed_bytes);
+                        // SAFETY: Splitting the buffer at `error.valid_up_to()` guarantees
+                        // that `valid` is valid.
+                        unsafe { line_buf.push_str(std::str::from_utf8_unchecked(valid)); }
+                        line_buf.push_str("\u{FFFD}");
+                        if let Some(invalid_sequence_length) = error.error_len() {
+                            buf = &after_valid[invalid_sequence_length..];
+                        } else {
+                            break
+                        }
+                    }
+                };
+            }
+            // While loop because multiple \r or \n's might have been fetched.
+            while let Some(index) = line_buf.find(['\r', '\n']) {
+                println!("{} {}", self.colorhost, &line_buf[..index]);
+                line_buf = String::from(&line_buf[index+1..]);
+            }
+            reader.consume(consumed_bytes);
         }
     }
 }
