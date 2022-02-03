@@ -3,8 +3,7 @@ use std::process::Stdio;
 use colored::ColoredString;
 use colourado::Color;
 use openssh::{KnownHosts, Session as SSHSession};
-use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::{ChildStdout, ChildStderr};
+use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use futures::future::join;
 
 use crate::host::Host;
@@ -40,8 +39,8 @@ impl Session {
             .spawn()
             .expect("Failed to spawn ssh command.");
         join(
-            self.stream_stdout(process.stdout().as_mut().unwrap()),
-            self.stream_stderr(process.stderr().as_mut().unwrap())
+            self.stream(process.stdout().take().unwrap()),
+            self.stream(process.stderr().take().unwrap())
         ).await;
         let status = process
             .wait()
@@ -51,13 +50,13 @@ impl Session {
         status.code()
     }
 
-    async fn stream_stdout(&self, stdout: &mut ChildStdout) {
-        let mut stdout_reader = BufReader::new(stdout);
+    async fn stream<B: AsyncRead + Unpin>(&self, stdout: B) {
+        let mut reader = BufReader::new(stdout);
         let mut line_buf = String::with_capacity(256);
         loop {
             let buflen;
             {
-                let buf = stdout_reader
+                let buf = reader
                     .fill_buf()
                     .await
                     .expect("Failed to read stdout");
@@ -76,36 +75,7 @@ impl Session {
                     };
                 }
             }
-            stdout_reader.consume(buflen);
-        }
-    }
-
-    async fn stream_stderr(&self, stdout: &mut ChildStderr) {
-        let mut stdout_reader = BufReader::new(stdout);
-        let mut line_buf = String::with_capacity(256);
-        loop {
-            let buflen;
-            {
-                let buf = stdout_reader
-                    .fill_buf()
-                    .await
-                    .expect("Failed to read stdout");
-                buflen = buf.len();
-                // An empty buffer means that the stream has reached an EOF.
-                if buf.is_empty() {
-                    break;
-                }
-                for c in buf.iter().map(|c| *c as char) {
-                    match c {
-                        '\r' | '\n' => {
-                            println!("{} {}", self.colorhost, line_buf);
-                            line_buf.clear();
-                        }
-                        _ => line_buf.push(c),
-                    };
-                }
-            }
-            stdout_reader.consume(buflen);
+            reader.consume(buflen);
         }
     }
 }
