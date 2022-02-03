@@ -82,7 +82,7 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
             let mut registry = Handlebars::new();
             while let Ok(job) = command_rx.recv().await {
                 let job = job.fill_template(&mut registry, &host);
-                println!("{} === run '{}' ===", host, &job);
+                println!("{} === run '{}' ===", colorhost, &job);
                 let mut cmd = session.command("sh");
                 let mut process = cmd
                     .arg("-c")
