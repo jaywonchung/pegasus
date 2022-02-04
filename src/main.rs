@@ -21,9 +21,8 @@ use tokio::sync::broadcast;
 use crate::config::{Config, Mode};
 use crate::host::get_hosts;
 use crate::job::{get_one_job, Cmd};
-use crate::sync::LockedFile;
 use crate::session::Session;
-
+use crate::sync::LockedFile;
 
 async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
     let hosts = get_hosts();
