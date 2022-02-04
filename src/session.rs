@@ -59,26 +59,36 @@ impl Session {
         let mut reader = BufReader::new(stream);
         let mut buf = Vec::with_capacity(reader.buffer().len());
         loop {
+            // Read into the buffer until either \r or \n is met.
             read_until2(&mut reader, b'\r', b'\n', &mut buf)
                 .await
                 .expect("Failed to read from stream.");
+            // An empty buffer means that EOF was reached.
             if buf.is_empty() {
                 break;
             }
+            // Print as we decode.
             print!("{} ", self.colorhost);
             loop {
                 match std::str::from_utf8(&buf) {
                     Ok(valid) => {
+                        // Ok means that the entire `buf` is valid. We print everything
+                        // happily and break out of the loop.
+                        // The buffer populated by `read_until2` includes the delimiter.
                         println!("{}", &valid[..valid.len() - 1]);
                         buf.clear();
                         break;
                     }
                     Err(error) => {
+                        // The decoder met an invaild UTF-8 byte sequence while decoding.
+                        // We print up to `valid_len`, drain the buffer (including the
+                        // length of the error'ed bytes) and try decoding again.
                         let valid_len = error.valid_up_to();
-                        let error_len = error.error_len().expect("read_until2 cuts off UTF-8");
+                        let error_len = error.error_len().expect("read_until2 cuts off UTF-8.");
                         print!(
-                            "{} {}\u{FFD}",
-                            self.colorhost,
+                            "{}\u{FFFD}",
+                            // SAFETY: `error.valid_up_to()` guarantees that up to that
+                            //         index, all characters are valid UTF-8.
                             unsafe { std::str::from_utf8_unchecked(&buf[..valid_len]) },
                         );
                         buf.drain(..valid_len + error_len);
