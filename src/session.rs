@@ -65,15 +65,11 @@ impl Session {
             if buf.is_empty() {
                 break;
             }
-            let mut first_iteration = true;
+            print!("{} ", self.colorhost);
             loop {
                 match std::str::from_utf8(&buf) {
                     Ok(valid) => {
-                        if first_iteration {
-                            println!("{} {}", self.colorhost, &valid[..valid.len() - 1]);
-                        } else {
-                            println!("{}", &valid[..valid.len() - 1]);
-                        }
+                        println!("{}", &valid[..valid.len() - 1]);
                         buf.clear();
                         break;
                     }
@@ -86,7 +82,6 @@ impl Session {
                             unsafe { std::str::from_utf8_unchecked(&buf[..valid_len]) },
                         );
                         buf.drain(..valid_len + error_len);
-                        first_iteration = false;
                     }
                 }
             }
