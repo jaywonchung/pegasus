@@ -193,7 +193,7 @@ async fn run_lock(cli: &Config) {
     command
         .arg("queue.yaml")
         .status()
-        .expect(&format!("Failed to execute '{} queue.yaml'.", editor));
+        .unwrap_or_else(|_| panic!("Failed to execute '{} queue.yaml'.", editor));
 }
 
 #[tokio::main]

@@ -24,17 +24,18 @@ impl LockedFile {
     }
 
     pub fn read_handle(&self) -> File {
-        File::open(self.file_path).expect(&format!("Failed to open {}", self.file_path))
+        File::open(self.file_path).unwrap_or_else(|_| panic!("Failed to open {}", self.file_path))
     }
 
     pub fn write_handle(&self) -> File {
-        File::create(self.file_path).expect(&format!("Failed to create {}", self.file_path))
+        File::create(self.file_path)
+            .unwrap_or_else(|_| panic!("Failed to create {}", self.file_path))
     }
 }
 
 impl Drop for LockedFile {
     fn drop(&mut self) {
         std::fs::remove_file(self.lock_path)
-            .expect(&format!("Failed to remove lock file {}", self.lock_path));
+            .unwrap_or_else(|_| panic!("Failed to remove lock file {}", self.lock_path));
     }
 }

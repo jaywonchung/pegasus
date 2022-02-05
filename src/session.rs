@@ -1,14 +1,10 @@
-use std::marker::PhantomPinned;
-use std::pin::Pin;
 use std::process::Stdio;
-use std::task::{Context, Poll};
 
 use colored::ColoredString;
 use colourado::Color;
-use futures::future::{join, Future};
-use futures::ready;
+use futures::future::join;
 use openssh::{KnownHosts, Session as SSHSession};
-use tokio::io::{AsyncBufRead, AsyncRead, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 
 use crate::host::Host;
 
@@ -22,7 +18,7 @@ impl Session {
     pub async fn connect(host: Host, color: Color) -> Self {
         let session = SSHSession::connect(&host.hostname, KnownHosts::Add)
             .await
-            .expect(&format!("{} Failed to connect to host.", host));
+            .unwrap_or_else(|_| panic!("{} Failed to connect to host.", host));
         let colorhost = host.prettify(color);
         eprintln!("{} Connected to host.", colorhost);
         Self {
@@ -50,8 +46,8 @@ impl Session {
         let status = process
             .wait()
             .await
-            .expect(&format!("{} Waiting on ssh errored.", self.host));
-        eprintln!("{} === done ({}) ===", self.colorhost, status);
+            .unwrap_or_else(|_| panic!("{} Waiting on ssh errored.", self.host));
+        println!("{} === done ({}) ===", self.colorhost, status);
         status.code()
     }
 
@@ -70,6 +66,8 @@ impl Session {
             // Print as we decode.
             print!("{} ", self.colorhost);
             loop {
+                // This loop will not infinitely loop because `from_utf8` returns `Ok`
+                // when `buf` is empty.
                 match std::str::from_utf8(&buf) {
                     Ok(valid) => {
                         // Ok means that the entire `buf` is valid. We print everything
@@ -105,50 +103,15 @@ impl Drop for Session {
     }
 }
 
-// Stolen from https://docs.rs/tokio/latest/src/tokio/io/util/read_until.rs.html
-// Changed memchr::memchr to memchr::memchr2.
-pin_project_lite::pin_project! {
-    struct ReadUntil2<'a, R: ?Sized> {
-        reader: &'a mut R,
-        delimiter1: u8,
-        delimiter2: u8,
-        buf: &'a mut Vec<u8>,
-        read: usize,
-        #[pin]
-        _pin: PhantomPinned,
-    }
-}
-
-fn read_until2<'a, R>(
-    reader: &'a mut R,
-    delimiter1: u8,
-    delimiter2: u8,
-    buf: &'a mut Vec<u8>,
-) -> ReadUntil2<'a, R>
-where
-    R: AsyncBufRead + ?Sized + Unpin,
-{
-    ReadUntil2 {
-        reader,
-        delimiter1,
-        delimiter2,
-        buf,
-        read: 0,
-        _pin: PhantomPinned,
-    }
-}
-
-fn read_until2_internal<R: AsyncBufRead + ?Sized>(
-    mut reader: Pin<&mut R>,
-    cx: &mut Context<'_>,
+async fn read_until2<B: AsyncRead + Unpin>(
+    reader: &mut BufReader<B>,
     delimiter1: u8,
     delimiter2: u8,
     buf: &mut Vec<u8>,
-    read: &mut usize,
-) -> Poll<std::io::Result<usize>> {
+) -> std::io::Result<()> {
     loop {
         let (done, used) = {
-            let available = ready!(reader.as_mut().poll_fill_buf(cx))?;
+            let available = reader.fill_buf().await?;
             if let Some(i) = memchr::memchr2(delimiter1, delimiter2, available) {
                 buf.extend_from_slice(&available[..=i]);
                 (true, i + 1)
@@ -157,26 +120,9 @@ fn read_until2_internal<R: AsyncBufRead + ?Sized>(
                 (false, available.len())
             }
         };
-        reader.as_mut().consume(used);
-        *read += used;
+        reader.consume(used);
         if done || used == 0 {
-            return Poll::Ready(Ok(std::mem::replace(read, 0)));
+            return Ok(());
         }
-    }
-}
-
-impl<R: AsyncBufRead + ?Sized + Unpin> Future for ReadUntil2<'_, R> {
-    type Output = std::io::Result<usize>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let me = self.project();
-        read_until2_internal(
-            Pin::new(*me.reader),
-            cx,
-            *me.delimiter1,
-            *me.delimiter2,
-            me.buf,
-            me.read,
-        )
     }
 }

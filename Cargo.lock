@@ -547,7 +547,6 @@ dependencies = [
  "itertools",
  "memchr",
  "openssh",
- "pin-project-lite",
  "serde",
  "serde_yaml",
  "tokio",
