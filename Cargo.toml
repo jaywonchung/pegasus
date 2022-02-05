@@ -20,3 +20,4 @@ clap = { version = "3.0.13", features = ["derive"] }
 handlebars = "3"
 colored = "2"
 colourado = "0.2.0"
+memchr = "2.4.1"

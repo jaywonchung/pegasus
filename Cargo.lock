@@ -545,6 +545,7 @@ dependencies = [
  "futures",
  "handlebars",
  "itertools",
+ "memchr",
  "openssh",
  "serde",
  "serde_yaml",

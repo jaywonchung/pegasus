@@ -37,10 +37,12 @@ impl Cmd {
         self.params.insert("hostname".to_string(), host.hostname);
         register
             .render(&self.command, &self.params)
-            .expect(&format!(
-                "Failed to render command template '{}' with params '{:#?}'",
-                &self.command, &self.params
-            ))
+            .unwrap_or_else(|_| {
+                panic!(
+                    "Failed to render command template '{}' with params '{:#?}'",
+                    &self.command, &self.params
+                )
+            })
     }
 }
 
