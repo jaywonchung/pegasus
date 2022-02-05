@@ -71,8 +71,8 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
             // Broadcast command to all sessions and wait for all to finish.
             command_tx.send(cmd).expect("command_tx");
             barrier.wait().await;
-            // Check if any errored.
-            let mut errored = errored.lock().await;
+            // Check if any errored. No task will be holding this lock now.
+            let mut errored = errored.blocking_lock();
             if *errored {
                 *errored = false;
                 if cli.error_aborts {
@@ -92,6 +92,8 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
 
     // After this, tasks that call recv on command_tx will get an Err, gracefully terminating the
     // SSH session.
+    // TODO: Have command_tx hold Option<Cmd>, where None means that the SSH session
+    //       must be terminated.
     drop(command_tx);
 
     // The scheduling loop has terminated, but there should be commands still running.
