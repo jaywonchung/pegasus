@@ -1,4 +1,4 @@
-use std::process::Stdio;
+use std::process::{ExitStatus, Stdio};
 
 use colored::ColoredString;
 use colourado::Color;
@@ -28,7 +28,7 @@ impl Session {
         }
     }
 
-    pub async fn run(&self, job: String) -> Option<i32> {
+    pub async fn run(&self, job: String) -> Result<ExitStatus, openssh::Error> {
         println!("{} === run '{}' ===", self.colorhost, job);
         let mut cmd = self.session.command("sh");
         let mut process = cmd
@@ -43,12 +43,12 @@ impl Session {
             self.stream(process.stderr().take().unwrap()),
         )
         .await;
-        let status = process
-            .wait()
-            .await
-            .unwrap_or_else(|_| panic!("{} Waiting on ssh errored.", self.host));
-        println!("{} === done ({}) ===", self.colorhost, status);
-        status.code()
+        let result = process.wait().await;
+        match &result {
+            Ok(status) => println!("{} === done ({}) ===", self.colorhost, status),
+            Err(error) => println!("{} === done (error: {}) ===", self.colorhost, error),
+        };
+        result
     }
 
     async fn stream<B: AsyncRead + Unpin>(&self, stream: B) {
