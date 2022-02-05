@@ -4,6 +4,7 @@ use std::str::FromStr;
 
 use handlebars::Handlebars;
 use serde::{Deserialize, Serialize};
+use tokio::time;
 use void::Void;
 
 use crate::host::Host;
@@ -63,32 +64,46 @@ impl FromStr for JobSpecInner {
     }
 }
 
-pub async fn get_one_job() -> Option<Vec<Cmd>> {
-    let mut error_count = 0;
-    loop {
-        let queue_file = LockedFile::acquire("lock", "queue.yaml").await;
-        let read_handle = queue_file.read_handle();
-        let job_specs: Result<Vec<JobSpec>, _> = serde_yaml::from_reader(read_handle);
-        match job_specs {
-            Ok(mut job_specs) => {
-                if job_specs.is_empty() {
-                    return None;
-                }
+pub struct JobQueue {
+    fetched: Vec<Cmd>,
+}
 
-                // Read the first job spec from queue.yaml.
+impl JobQueue {
+    pub fn new() -> Self {
+        Self {
+            fetched: Vec::new(),
+        }
+    }
+
+    pub async fn next(&mut self) -> Option<Cmd> {
+        if self.fetched.is_empty() {
+            self.fetch().await;
+        }
+        // When queue.yaml is empty, calling `fetch` will leave
+        // `self.fetched` an empty vector. Thus, `None` is returned.
+        self.fetched.pop()
+    }
+
+    async fn fetch(&mut self) {
+        loop {
+            let queue_file = LockedFile::acquire(".lock", "queue.yaml").await;
+            let file = queue_file.read_handle();
+            let job_specs: Result<Vec<JobSpec>, _> = serde_yaml::from_reader(file);
+            if let Ok(mut job_specs) = job_specs {
+                if job_specs.is_empty() {
+                    return;
+                }
                 let job_spec = job_specs.remove(0);
 
-                // Check if it has the key 'command'.
+                // Job spec must contain the key "command".
                 if !job_spec.0 .0.contains_key("command") {
                     eprintln!("[Pegasus] Job at the head of the queue has no 'command' key.");
-                    eprintln!("[Pegasus] Waiting 5 seconds before retry...");
-                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                    eprintln!("[Pegasus] Wait 5 seconds for fix...");
+                    time::sleep(time::Duration::from_secs(5)).await;
                     continue;
                 }
 
                 // Job spec looks good. Remove it from queue.yaml.
-                // NOTE: Might consider removing only one command from the command value list
-                //       when there are multiple command templates in a single queue.yaml entry
                 serde_yaml::to_writer(queue_file.write_handle(), &job_specs)
                     .expect("Failed to update queue.yaml");
 
@@ -131,17 +146,17 @@ pub async fn get_one_job() -> Option<Vec<Cmd>> {
                     job = expanded;
                 }
 
-                return Some(job);
-            }
-            Err(err) => {
-                error_count += 1;
-                if error_count > 10 {
-                    eprintln!("[Pegasus] Failed to parse queue.yaml too many times. Assuming empty queue.");
-                    return None;
-                }
-                eprintln!("[Pegasus] Failed to parse queue.yaml: {}", err);
-                eprintln!("[Pegasus] Waiting 5 seconds before retry...");
-                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                // Reverse the command vector so that we can `pop` in `next`.
+                job.reverse();
+                self.fetched = job;
+                return;
+            } else {
+                eprintln!(
+                    "[Pegasus] Failed to parse queue.yaml: {}",
+                    job_specs.unwrap_err()
+                );
+                eprintln!("[Pegasus] Wait 5 seconds for fix...");
+                time::sleep(time::Duration::from_secs(5)).await;
             }
         }
     }
