@@ -6,7 +6,7 @@ Run a list of commands on a set of SSH nodes. With a bit of optional parametriza
 
 ## Demo
 
-[![asciicast](demo.png)](https://asciinema.org/a/T907oftlXQP0QWqLnF43IkCjo)
+[![asciicast](demo.png)](https://asciinema.org/a/zERwhKrj0AQ3qW0g9RCj8MBsr)
 
 ## Features
 
