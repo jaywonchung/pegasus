@@ -90,9 +90,9 @@ impl Session {
                             unsafe { std::str::from_utf8_unchecked(&buf[..valid_len]) },
                         );
                         buf.drain(..valid_len + error_len);
-                        }
                     }
                 }
+            }
         }
     }
 }
