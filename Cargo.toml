@@ -9,7 +9,7 @@ license = "MIT"
 
 [dependencies]
 openssh = "0.8.1"
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt", "macros", "io-util", "time", "sync", "rt-multi-thread"] }
 futures = "0.3"
 flume = { version = "0.10.10", features = ["async"] }
 serde = { version = "1.0", features = ["derive"] }
