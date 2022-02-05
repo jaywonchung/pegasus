@@ -165,58 +165,7 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
         // finished running. So we wait.
         eprintln!("[Pegasus] Queue drained. Waiting 3 seconds...");
         time::sleep(time::Duration::from_secs(3)).await;
-
-        // if !notify_rx.is_empty() {
-        //     // At least one session is available to execute commands.
-        //     if let Some(cmd) = job_queue.next().await {
-        //         // Next command available.
-        //         // Use blocking methods because submitting jobs is more important
-        //         // than streaming output from jobs that are already running.
-        //         let host_index = notify_rx.recv().expect("notify_rx");
-        //         command_txs[host_index].send(cmd).expect("command_tx");
-        //         continue;
-        //     } else if !cli.daemon && notify_rx.is_full() {
-        //         // Queue empty, not in daemon mode, and all commands finished.
-        //         // Break out of the scheduling loop.
-        //         break;
-        //     }
-        // }
-        // time::sleep(time::Duration::from_secs(5)).await;
     }
-
-    // let mut host_index = notify_rx
-    //     .recv_async()
-    //     .await
-    //     .expect("Failed while receiving command request.");
-    // 'sched: loop {
-    //     if let Some(jobs) = get_one_job().await {
-    //         // One job might consist of multiple jobs after parametrization.
-    //         for job in jobs {
-    //             command_txs[host_index]
-    //                 .send_async(job)
-    //                 .await
-    //                 .expect("Failed while sending command.");
-    //             host_index = notify_rx
-    //                 .recv_async()
-    //                 .await
-    //                 .expect("Failed while receiving command request.");
-    //         }
-    //     } else if cli.daemon {
-    //         // The queue file is empty at the moment, but since we're in daemon mode, wait.
-    //         time::sleep(time::Duration::from_secs(5)).await;
-    //     } else {
-    //         // We drained everything in the queue file. Still, wait until all commands finish.
-    //         // If new commands arrive in queue.yaml while we're waiting, we're willing to
-    //         // execute those, too.
-    //         // We already received one message from `notify_rx` in the last iteration of the
-    //         // job loop. Thus, if the length of the channel is `num_hosts - 1`, it means that
-    //         // all sessions are done executing.
-    //         if notify_rx.len() == num_hosts - 1 {
-    //             break 'sched;
-    //         }
-    //         time::sleep(time::Duration::from_secs(5)).await;
-    //     }
-    // }
 
     // After this, tasks that call recv on command_tx or send on notify_rx will get an Err,
     // gracefully terminating the SSH session.
