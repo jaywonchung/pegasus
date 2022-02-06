@@ -35,13 +35,13 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
     let hosts = get_hosts();
     let num_hosts = hosts.len();
 
-    // Set handler for Ctrl-c. This will broadcast a `None` to all SSH
-    // sessions, leading to their graceful termination.
+    // Set handler for Ctrl-c. This will set the `cancelled` variable to
+    // true, which will be noticed by the scheduling loop.
     let cancelled = Arc::new(Mutex::new(false));
-    let handler_cancelled = Arc::clone(&cancelled);
+    let cancelled_handler = Arc::clone(&cancelled);
     ctrlc::set_handler(move || {
         eprintln!("\n[Pegasus] Ctrl-c detected. Sending out cancel notices.");
-        *handler_cancelled.blocking_lock() = true;
+        *cancelled_handler.blocking_lock() = true;
     })
     .expect("Failed to set ctrl-c handler.");
 
@@ -127,13 +127,13 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
     let hosts = get_hosts();
     let num_hosts = hosts.len();
 
-    // Set handler for Ctrl-c. This will broadcast a `None` to all SSH
-    // sessions, leading to their graceful termination.
+    // Set handler for Ctrl-c. This will set the `cancelled` variable to
+    // true, which will be noticed by the scheduling loop.
     let cancelled = Arc::new(Mutex::new(false));
-    let handler_cancelled = Arc::clone(&cancelled);
+    let cancelled_handler = Arc::clone(&cancelled);
     ctrlc::set_handler(move || {
         eprintln!("\n[Pegasus] Ctrl-c detected. Sending out cancel notices.");
-        *handler_cancelled.blocking_lock() = true;
+        *cancelled_handler.blocking_lock() = true;
     })
     .expect("Failed to set ctrl-c handler.");
 
@@ -209,9 +209,8 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
         time::sleep(time::Duration::from_secs(3)).await;
     }
 
-    // After this, tasks that call recv on command_tx or send on notify_rx will get an Err,
+    // After this, tasks that call recv on command_rx or send on notify_tx will get an Err,
     // gracefully terminating the SSH session.
-    drop(notify_tx);
     drop(notify_rx);
     drop(command_txs);
 
