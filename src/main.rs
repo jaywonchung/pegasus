@@ -70,7 +70,7 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
             let mut registry = Handlebars::new();
             // When cancellation is triggered by the ctrlc handler, the
             // scheduling loop will see that, break, and drop `command_tx`.
-            // That will return `Err` from `command_rx.recv`, allowing the
+            // Then `command_rx.recv()` will return `Err`, allowing the
             // session object to be dropped, and everyting gracefully
             // terminated.
             while let Ok(cmd) = command_rx.recv().await {
