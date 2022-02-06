@@ -100,7 +100,6 @@ impl Session {
                     }
                 }
             }
-            drop(lock);
         }
     }
 }
