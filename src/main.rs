@@ -10,6 +10,8 @@ mod job;
 mod sync;
 // SSH session wrapper.
 mod session;
+// Provides utility for std::io::Writer
+mod writer;
 
 use std::sync::Arc;
 
