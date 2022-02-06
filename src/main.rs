@@ -81,6 +81,7 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
                 }
                 end_barrier.wait().await;
             }
+            session.close().await;
         }));
     }
 
@@ -170,6 +171,7 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
                     Err(_) => break,
                 };
             }
+            session.close().await;
         }));
     }
 

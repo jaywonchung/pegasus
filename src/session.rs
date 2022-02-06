@@ -52,6 +52,13 @@ impl Session {
         result
     }
 
+    pub async fn close(self) {
+        eprintln!("{} Terminating connection.", self.colorhost);
+        if let Err(e) = self.session.close().await {
+            eprintln!("{} Error while terminating: {}", self.colorhost, e);
+        }
+    }
+
     async fn stream<B: AsyncRead + Unpin>(&self, stream: B) {
         let mut reader = BufReader::new(stream);
         let mut buf = Vec::with_capacity(reader.buffer().len());
@@ -101,12 +108,6 @@ impl Session {
                 }
             }
         }
-    }
-}
-
-impl Drop for Session {
-    fn drop(&mut self) {
-        eprintln!("{} Terminating connection.", self.colorhost);
     }
 }
 
