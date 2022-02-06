@@ -75,8 +75,8 @@ impl Session {
             // Without the lock, when multiple commands output to stdout,
             // lines from different commands get mixed.
             let stdout = std::io::stdout();
-            let mut lock = stdout.lock();
-            write!(lock, "{} ", self.colorhost).unwrap();
+            let mut guard = stdout.lock();
+            write!(guard, "{} ", self.colorhost).unwrap();
             loop {
                 // This loop will not infinitely loop because `from_utf8` returns `Ok`
                 // when `buf` is empty.
@@ -85,7 +85,7 @@ impl Session {
                         // Ok means that the entire `buf` is valid. We print everything
                         // happily and break out of the loop.
                         // The buffer populated by `read_until2` includes the delimiter.
-                        writeln!(lock, "{}", &valid[..valid.len() - 1]).unwrap();
+                        writeln!(guard, "{}", &valid[..valid.len() - 1]).unwrap();
                         buf.clear();
                         break;
                     }
@@ -96,7 +96,7 @@ impl Session {
                         let valid_len = error.valid_up_to();
                         let error_len = error.error_len().expect("read_until2 cuts off UTF-8.");
                         write!(
-                            lock,
+                            guard,
                             "{}\u{FFFD}",
                             // SAFETY: `error.valid_up_to()` guarantees that up to that
                             //         index, all characters are valid UTF-8.
