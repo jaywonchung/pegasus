@@ -3,8 +3,8 @@
 //! One SSH connection is created for one `Host`. Each connection will run commands in parallel with
 //! other connections in its own tokio task.
 
-use itertools::sorted;
 use colourado::Color;
+use itertools::sorted;
 use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
