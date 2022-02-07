@@ -13,6 +13,7 @@ mod session;
 // Provides utility for std::io::Writer
 mod writer;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use clap::Parser;
@@ -34,34 +35,55 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
     let hosts = get_hosts();
     let num_hosts = hosts.len();
 
+    // Set handler for Ctrl-c. This will set the `cancelled` variable to
+    // true, which will be noticed by the scheduling loop.
+    let cancelled = Arc::new(Mutex::new(false));
+    let cancelled_handler = Arc::clone(&cancelled);
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to await ctrl_c.");
+        eprintln!("\n[Pegasus] Ctrl-c detected. Sending out cancel notices.");
+        *cancelled_handler.lock().await = true;
+    });
+
     // Broadcast channel used to distribute commands to all hosts.
     let (command_tx, _) = broadcast::channel::<Cmd>(1);
 
     // Synchronization barrier that all SSH sessions report to when
     // they're done executing. The scheduler also waits on this barrier
     // to know when all sessions are done.
-    let barrier = Arc::new(Barrier::new(num_hosts + 1));
+    let end_barrier = Arc::new(Barrier::new(num_hosts + 1));
 
-    let mut tasks = vec![];
-    let errored = Arc::new(Mutex::new(false));
+    // An atomic variable set whenever a session errors. Later read by
+    // the scheduling loop to determine whether or not to exit.
+    let errored = Arc::new(AtomicBool::new(false));
+
+    let mut tasks = Vec::with_capacity(num_hosts);
     let colors = ColorPalette::new(num_hosts as u32, PaletteType::Pastel, false).colors;
     for (color, host) in zip(colors, hosts) {
         let mut command_rx = command_tx.subscribe();
-        let barrier = Arc::clone(&barrier);
+        let end_barrier = Arc::clone(&end_barrier);
         let errored = Arc::clone(&errored);
         tasks.push(tokio::spawn(async move {
             // Open a new SSH session with the host.
             let session = Session::connect(host, color).await;
             // Handlebars registry for filling in parameters.
             let mut registry = Handlebars::new();
-            while let Ok(job) = command_rx.recv().await {
-                let job = job.fill_template(&mut registry, &session.host);
-                let result = session.run(job).await;
+            // When cancellation is triggered by the ctrlc handler, the
+            // scheduling loop will see that, break, and drop `command_tx`.
+            // Then `command_rx.recv()` will return `Err`, allowing the
+            // session object to be dropped, and everyting gracefully
+            // terminated.
+            while let Ok(cmd) = command_rx.recv().await {
+                let cmd = cmd.fill_template(&mut registry, &session.host);
+                let result = session.run(cmd).await;
                 if result.is_err() || result.unwrap().code() != Some(0) {
-                    *errored.lock().await = true;
+                    errored.store(true, Ordering::Relaxed);
                 }
-                barrier.wait().await;
+                end_barrier.wait().await;
             }
+            session.close().await;
         }));
     }
 
@@ -69,18 +91,21 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
     // to SSH sessions.
     let mut job_queue = JobQueue::new();
     loop {
+        // Check cancel.
+        if *cancelled.lock().await {
+            eprintln!("[Pegasus] Ctrl-c detected. Stopping scheduling loop...");
+            break;
+        }
+        // Try to fetch the next job and run it.
         if let Some(cmd) = job_queue.next().await {
             // Broadcast command to all sessions and wait for all to finish.
             command_tx.send(cmd).expect("command_tx");
-            barrier.wait().await;
+            // Unleash the sessions. The sessions are guaranteed to
+            end_barrier.wait().await;
             // Check if any errored. No task will be holding this lock now.
-            let mut errored = errored.blocking_lock();
-            if *errored {
-                *errored = false;
-                if cli.error_aborts {
-                    eprintln!("[Pegasus] Some commands failed. Aborting.");
-                    break;
-                }
+            if cli.error_aborts && errored.load(Ordering::SeqCst) {
+                eprintln!("[Pegasus] Some commands failed. Aborting.");
+                break;
             }
             continue;
         } else if !cli.daemon {
@@ -89,17 +114,13 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
             break;
         }
         eprintln!("[Pegasus] Queue drained. Waiting 3 seconds...");
-        time::sleep(time::Duration::from_secs(5)).await;
+        time::sleep(time::Duration::from_secs(3)).await;
     }
 
-    // After this, tasks that call recv on command_tx will get an Err, gracefully terminating the
-    // SSH session.
-    // TODO: Have command_tx hold Option<Cmd>, where None means that the SSH session
-    //       must be terminated.
+    // Dropping this will make sessions break of the while loop.
     drop(command_tx);
 
-    // The scheduling loop has terminated, but there should be commands still running.
-    // Wait for all of them to finish.
+    // Wait for all session tasks to finish cleanup.
     join_all(tasks).await;
 
     Ok(())
@@ -109,11 +130,23 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
     let hosts = get_hosts();
     let num_hosts = hosts.len();
 
-    // MPMC channel (used as MPSC) for requesting1 the scheduling loop a new command.
+    // Set handler for Ctrl-c. This will set the `cancelled` variable to
+    // true, which will be noticed by the scheduling loop.
+    let cancelled = Arc::new(Mutex::new(false));
+    let cancelled_handler = Arc::clone(&cancelled);
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to await ctrl_c.");
+        eprintln!("\n[Pegasus] Ctrl-c detected. Sending out cancel notices.");
+        *cancelled_handler.lock().await = true;
+    });
+
+    // MPMC channel (used as MPSC) for requesting the scheduling loop a new command.
     let (notify_tx, notify_rx) = flume::bounded(hosts.len());
 
-    let mut tasks = vec![];
-    let mut command_txs = vec![];
+    let mut tasks = Vec::with_capacity(num_hosts);
+    let mut command_txs = Vec::with_capacity(num_hosts);
     let colors = ColorPalette::new(num_hosts as u32, PaletteType::Pastel, false).colors;
     for ((host_index, host), color) in zip(hosts.into_iter().enumerate(), colors) {
         // MPMC channel (used as SPSC) to send the actual command to the SSH session task.
@@ -125,16 +158,24 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
             let session = Session::connect(host, color).await;
             // Handlebars registry for filling in parameters.
             let mut registry = Handlebars::new();
-            // Request a new command from the scheduler.
-            if notify_tx.send_async(host_index).await.is_ok() {
-                while let Ok(job) = command_rx.recv_async().await {
-                    let job = job.fill_template(&mut registry, &session.host);
-                    let _ = session.run(job).await;
-                    if notify_tx.send_async(host_index).await.is_err() {
-                        break;
-                    }
+            // When cancellation happens, the scheduling loop will detect that and drop
+            // `notify_rx` and `command_tx`. Thus we can break out of the loop and
+            // gracefully terminate the session.
+            loop {
+                // Request the scheduler a new command.
+                if notify_tx.send_async(host_index).await.is_err() {
+                    break;
                 }
+                // Receive and run the command.
+                match command_rx.recv_async().await {
+                    Ok(cmd) => {
+                        let cmd = cmd.fill_template(&mut registry, &session.host);
+                        let _ = session.run(cmd).await;
+                    }
+                    Err(_) => break,
+                };
             }
+            session.close().await;
         }));
     }
 
@@ -143,6 +184,11 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
     let mut job_queue = JobQueue::new();
     let mut host_index;
     loop {
+        // Check cancel.
+        if *cancelled.lock().await {
+            eprintln!("[Pegasus] Ctrl-c detected. Stopping scheduling loop...");
+            break;
+        }
         // `recv_async` will allow the scheduler to react to a new free session
         // immediately. However, the received `host_index` must be consumed in
         // some way.
@@ -169,9 +215,8 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
         time::sleep(time::Duration::from_secs(3)).await;
     }
 
-    // After this, tasks that call recv on command_tx or send on notify_rx will get an Err,
+    // After this, tasks that call recv on command_rx or send on notify_tx will get an Err,
     // gracefully terminating the SSH session.
-    drop(notify_tx);
     drop(notify_rx);
     drop(command_txs);
 

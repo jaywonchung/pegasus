@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::process::{ExitStatus, Stdio};
 
 use colored::ColoredString;
@@ -51,6 +52,13 @@ impl Session {
         result
     }
 
+    pub async fn close(self) {
+        eprintln!("{} Terminating connection.", self.colorhost);
+        if let Err(e) = self.session.close().await {
+            eprintln!("{} Error while terminating: {}", self.colorhost, e);
+        }
+    }
+
     async fn stream<B: AsyncRead + Unpin>(&self, stream: B) {
         let mut reader = BufReader::new(stream);
         let mut buf = Vec::with_capacity(reader.buffer().len());
@@ -64,7 +72,11 @@ impl Session {
                 break;
             }
             // Print as we decode.
-            print!("{} ", self.colorhost);
+            // Without the lock, when multiple commands output to stdout,
+            // lines from different commands get mixed.
+            let stdout = std::io::stdout();
+            let mut guard = stdout.lock();
+            write!(guard, "{} ", self.colorhost).unwrap();
             loop {
                 // This loop will not infinitely loop because `from_utf8` returns `Ok`
                 // when `buf` is empty.
@@ -73,7 +85,7 @@ impl Session {
                         // Ok means that the entire `buf` is valid. We print everything
                         // happily and break out of the loop.
                         // The buffer populated by `read_until2` includes the delimiter.
-                        println!("{}", &valid[..valid.len() - 1]);
+                        writeln!(guard, "{}", &valid[..valid.len() - 1]).unwrap();
                         buf.clear();
                         break;
                     }
@@ -83,23 +95,19 @@ impl Session {
                         // length of the error'ed bytes) and try decoding again.
                         let valid_len = error.valid_up_to();
                         let error_len = error.error_len().expect("read_until2 cuts off UTF-8.");
-                        print!(
+                        write!(
+                            guard,
                             "{}\u{FFFD}",
                             // SAFETY: `error.valid_up_to()` guarantees that up to that
                             //         index, all characters are valid UTF-8.
                             unsafe { std::str::from_utf8_unchecked(&buf[..valid_len]) },
-                        );
+                        )
+                        .unwrap();
                         buf.drain(..valid_len + error_len);
                     }
                 }
             }
         }
-    }
-}
-
-impl Drop for Session {
-    fn drop(&mut self) {
-        eprintln!("{} Terminating connection.", self.colorhost);
     }
 }
 
