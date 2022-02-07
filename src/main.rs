@@ -40,7 +40,9 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
     let cancelled = Arc::new(Mutex::new(false));
     let cancelled_handler = Arc::clone(&cancelled);
     tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.expect("Failed to await ctrl_c.");
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to await ctrl_c.");
         eprintln!("\n[Pegasus] Ctrl-c detected. Sending out cancel notices.");
         *cancelled_handler.lock().await = true;
     });
@@ -133,7 +135,9 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
     let cancelled = Arc::new(Mutex::new(false));
     let cancelled_handler = Arc::clone(&cancelled);
     tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.expect("Failed to await ctrl_c.");
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Failed to await ctrl_c.");
         eprintln!("\n[Pegasus] Ctrl-c detected. Sending out cancel notices.");
         *cancelled_handler.lock().await = true;
     });
