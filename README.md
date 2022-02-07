@@ -174,3 +174,41 @@ Enable daemon mode, and Pegasus will not terminate even if `queue.yaml` is empty
 ```console
 $ cargo run -- q --daemon
 ```
+
+## Details
+
+### `queue.yaml`
+
+This is the queue file. Entries in `queue.yaml` are consumed from the top, one by one. Also, entries are consumed only when a new host is available to execute new commands. Consumed entries are immediately appended to `consumed.yaml` in "canonical form", where every entry has a `command` key. Thus you might do something like `tail -n 2 consumed.yaml > queue.yaml` to re-execute your previous single-line command.
+
+As mentioned earlier, always use the Lock Mode when you need to modify `queue.yaml`.
+
+### Broadcast Mode
+
+In broadcast mode, hosts are kept in sync with each other. That is, the next command is fetched from `queue.yaml` and executed on all hosts when all the hosts are done executing the previous command.
+
+Consider the following situation:
+
+```
+              fast-host   slow-host
+- command1     success     success
+- command2     success      fail!
+- command3     success
+- command4     running
+```
+
+In this case, we would want to prepend a undo command for `command2` (e.g., `rm -rf repo || true`) and restart from that, but `fast-host` is already far ahead, making things complicated. Thus, especially when you're terraforming nodes with Pegasus, keeping hosts in sync should be beneficial.
+
+There is also a `-e` or `--error-aborts` flag in Broadcast Mode, which aborts Pegasus automatically when a host fails on a command.
+
+### Ctrl-c Behavior
+
+Pegasus tries to implement graceful termination upon ctrl-c. The following happens:
+
+1. User presses ctrl-c on terminal.
+2. Pegasus's ctrl-c handler wakes up and sends out a cancellation notice.
+3. The scheduling loop detects this notice and `break`s right before attempting to fetch from `queue.yaml`.
+    - It may take some time for the scheduling loop to detect this based on what state it's currently in, but it is guaranteed that once the cancellation notice has been sent out, `queue.yaml` will not change and new commands will not start executing.
+4. Commands that are already running **will run until completion**. SSH sessions will close their connections whenever they're free.
+    - If you really want everything to burn down, run `killall pegasus; killall ssh; rm -rf .ssh-connections*`. Of course, be aware of its implications.
+5. When all commands finish, Pegasus will exit.
