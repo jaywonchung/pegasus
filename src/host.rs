@@ -4,7 +4,6 @@
 //! other connections in its own tokio task.
 
 use itertools::sorted;
-// use random_color::{RandomColor, Luminosity, Color};
 use colourado::Color;
 use std::collections::HashMap;
 use std::fmt;
