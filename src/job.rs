@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::str::FromStr;
-use std::io::Write;
 
 use handlebars::Handlebars;
 use serde::{Deserialize, Serialize};

@@ -184,15 +184,15 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
     let mut job_queue = JobQueue::new();
     let mut host_index;
     loop {
+        // `recv_async` will allow the scheduler to react to a new free session
+        // immediately. However, the received `host_index` must be consumed in
+        // some way.
+        host_index = notify_rx.recv_async().await.expect("notify_rx");
         // Check cancel.
         if *cancelled.lock().await {
             eprintln!("[Pegasus] Ctrl-c detected. Stopping scheduling loop...");
             break;
         }
-        // `recv_async` will allow the scheduler to react to a new free session
-        // immediately. However, the received `host_index` must be consumed in
-        // some way.
-        host_index = notify_rx.recv_async().await.expect("notify_rx");
         if let Some(cmd) = job_queue.next().await {
             // Next command available.
             // Use blocking send because submitting jobs is more important
