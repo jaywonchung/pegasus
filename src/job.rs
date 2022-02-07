@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fs::File;
+use std::fs::OpenOptions;
 use std::str::FromStr;
 
 use handlebars::Handlebars;
@@ -10,6 +10,7 @@ use void::Void;
 use crate::host::Host;
 use crate::serde::string_or_mapping;
 use crate::sync::LockedFile;
+use crate::writer::StripPrefixWriter;
 
 #[derive(Debug, Clone)]
 pub struct Cmd {
@@ -108,24 +109,14 @@ impl JobQueue {
                     .expect("Failed to update queue.yaml");
 
                 // Move the job to consumed.yaml.
-                let (mut consumed, write_handle): (Vec<JobSpec>, _) =
-                    if std::fs::metadata("consumed.yaml").is_ok() {
-                        // consumed.yaml exists. So read it and deserialize it.
-                        let handle =
-                            File::open("consumed.yaml").expect("Failed to open consumed.yaml");
-                        let consumed = serde_yaml::from_reader(handle)
-                            .expect("Failed to parse consumed.yaml.");
-                        let write_handle =
-                            File::create("consumed.yaml").expect("Failed to create consumed.yaml.");
-                        (consumed, write_handle)
-                    } else {
-                        // consumed.yaml does not exist. Create one and return an empty vector.
-                        let write_handle =
-                            File::create("consumed.yaml").expect("Failed to create consumed.yaml");
-                        (Vec::with_capacity(1), write_handle)
-                    };
-                consumed.push(job_spec.clone());
-                serde_yaml::to_writer(write_handle, &consumed)
+                let write_handle = OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open("consumed.yaml")
+                    .expect("Failed to open consumed.yaml.");
+                // Strip the YAML metadata separator "---\n".
+                let writer = StripPrefixWriter::new(write_handle, 4);
+                serde_yaml::to_writer(writer, &vec![&job_spec])
                     .expect("Failed to update consumed.yaml");
 
                 // Cartesian product.
