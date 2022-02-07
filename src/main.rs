@@ -39,11 +39,11 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
     // true, which will be noticed by the scheduling loop.
     let cancelled = Arc::new(Mutex::new(false));
     let cancelled_handler = Arc::clone(&cancelled);
-    ctrlc::set_handler(move || {
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.expect("Failed to await ctrl_c.");
         eprintln!("\n[Pegasus] Ctrl-c detected. Sending out cancel notices.");
-        *cancelled_handler.blocking_lock() = true;
-    })
-    .expect("Failed to set ctrl-c handler.");
+        *cancelled_handler.lock().await = true;
+    });
 
     // Broadcast channel used to distribute commands to all hosts.
     let (command_tx, _) = broadcast::channel::<Cmd>(1);
@@ -132,11 +132,11 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
     // true, which will be noticed by the scheduling loop.
     let cancelled = Arc::new(Mutex::new(false));
     let cancelled_handler = Arc::clone(&cancelled);
-    ctrlc::set_handler(move || {
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.expect("Failed to await ctrl_c.");
         eprintln!("\n[Pegasus] Ctrl-c detected. Sending out cancel notices.");
-        *cancelled_handler.blocking_lock() = true;
-    })
-    .expect("Failed to set ctrl-c handler.");
+        *cancelled_handler.lock().await = true;
+    });
 
     // MPMC channel (used as MPSC) for requesting the scheduling loop a new command.
     let (notify_tx, notify_rx) = flume::bounded(hosts.len());

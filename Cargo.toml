@@ -9,7 +9,7 @@ license = "MIT"
 
 [dependencies]
 openssh = "0.8.1"
-tokio = { version = "1", features = ["rt", "macros", "io-util", "time", "sync", "rt-multi-thread", "parking_lot"] }
+tokio = { version = "1", features = ["rt", "macros", "io-util", "time", "sync", "rt-multi-thread", "parking_lot", "signal"] }
 futures = "0.3"
 flume = { version = "0.10.10", features = ["async"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -21,4 +21,3 @@ handlebars = "3"
 colored = "2"
 colourado = "0.2.0"
 memchr = "2.4.1"
-ctrlc = "3.2.1"
