@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::str::FromStr;
+use std::io::Write;
 
 use handlebars::Handlebars;
 use serde::{Deserialize, Serialize};
@@ -105,8 +106,9 @@ impl JobQueue {
                 }
 
                 // Job spec looks good. Remove it from queue.yaml.
-                serde_yaml::to_writer(queue_file.write_handle(), &job_specs)
-                    .expect("Failed to update queue.yaml");
+                // Strip the YAML metadata separator "---\n".
+                let writer = StripPrefixWriter::new(queue_file.write_handle(), 4);
+                serde_yaml::to_writer(writer, &job_specs).expect("Failed to update queue.yaml");
 
                 // Move the job to consumed.yaml.
                 let write_handle = OpenOptions::new()
@@ -142,6 +144,7 @@ impl JobQueue {
                 self.fetched = job;
                 return;
             } else {
+                drop(queue_file);
                 eprintln!(
                     "[Pegasus] Failed to parse queue.yaml: {}",
                     job_specs.unwrap_err()
