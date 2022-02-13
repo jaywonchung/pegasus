@@ -8,6 +8,7 @@ use clap::{ArgEnum, Parser};
 
 #[derive(Parser)]
 #[clap(version)]
+#[clap(author)]
 pub struct Config {
     /// Broadcast (b), Queue (q), and Lock (l) mode
     #[clap(arg_enum)]
@@ -24,6 +25,10 @@ pub struct Config {
     /// (Lock mode) Which editor to use to open queue.yaml
     #[clap(long)]
     pub editor: Option<String>,
+
+    /// How often to print output. Giving 0 will suppress stdout/stderr.
+    #[clap(long, short, default_value = "1")]
+    pub print_period: usize,
 }
 
 #[derive(PartialEq, Clone, ArgEnum)]

@@ -29,21 +29,27 @@ impl Session {
         }
     }
 
-    pub async fn run(&self, job: String) -> Result<ExitStatus, openssh::Error> {
+    pub async fn run(
+        &self,
+        job: String,
+        print_period: usize,
+    ) -> Result<ExitStatus, openssh::Error> {
         println!("{} === run '{}' ===", self.colorhost, job);
         let mut cmd = self.session.command("sh");
-        let mut process = cmd
-            .arg("-c")
-            .raw_arg(format!("'{}'", &job))
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("Failed to spawn ssh command.");
-        join(
-            self.stream(process.stdout().take().unwrap()),
-            self.stream(process.stderr().take().unwrap()),
-        )
-        .await;
+        let mut process = cmd.arg("-c").raw_arg(format!("'{}'", &job));
+        if print_period == 0 {
+            process = process.stdout(Stdio::null()).stderr(Stdio::null());
+        } else {
+            process = process.stdout(Stdio::piped()).stderr(Stdio::piped())
+        }
+        let mut process = process.spawn().expect("Failed to spawn ssh command.");
+        if print_period != 0 {
+            join(
+                self.stream(process.stdout().take().unwrap(), print_period),
+                self.stream(process.stderr().take().unwrap(), print_period),
+            )
+            .await;
+        }
         let result = process.wait().await;
         match &result {
             Ok(status) => println!("{} === done ({}) ===", self.colorhost, status),
@@ -59,14 +65,16 @@ impl Session {
         }
     }
 
-    async fn stream<B: AsyncRead + Unpin>(&self, stream: B) {
+    async fn stream<B: AsyncRead + Unpin>(&self, stream: B, print_period: usize) {
         let mut reader = BufReader::new(stream);
         let mut buf = Vec::with_capacity(reader.buffer().len());
         loop {
             // Read into the buffer until either \r or \n is met.
-            read_until2(&mut reader, b'\r', b'\n', &mut buf)
-                .await
-                .expect("Failed to read from stream.");
+            for _ in 0..print_period {
+                read_until2(&mut reader, b'\r', b'\n', &mut buf)
+                    .await
+                    .expect("Failed to read from stream.");
+            }
             // An empty buffer means that EOF was reached.
             if buf.is_empty() {
                 break;

@@ -65,6 +65,7 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
         let mut command_rx = command_tx.subscribe();
         let end_barrier = Arc::clone(&end_barrier);
         let errored = Arc::clone(&errored);
+        let print_period = cli.print_period;
         tasks.push(tokio::spawn(async move {
             // Open a new SSH session with the host.
             let session = Session::connect(host, color).await;
@@ -77,7 +78,7 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
             // terminated.
             while let Ok(cmd) = command_rx.recv().await {
                 let cmd = cmd.fill_template(&mut registry, &session.host);
-                let result = session.run(cmd).await;
+                let result = session.run(cmd, print_period).await;
                 if result.is_err() || result.unwrap().code() != Some(0) {
                     errored.store(true, Ordering::Relaxed);
                 }
@@ -153,6 +154,7 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
         let (command_tx, command_rx) = flume::bounded::<Cmd>(1);
         command_txs.push(command_tx);
         let notify_tx = notify_tx.clone();
+        let print_period = cli.print_period;
         tasks.push(tokio::spawn(async move {
             // Open a new SSH session with the host.
             let session = Session::connect(host, color).await;
@@ -170,7 +172,7 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
                 match command_rx.recv_async().await {
                     Ok(cmd) => {
                         let cmd = cmd.fill_template(&mut registry, &session.host);
-                        let _ = session.run(cmd).await;
+                        let _ = session.run(cmd, print_period).await;
                     }
                     Err(_) => break,
                 };
