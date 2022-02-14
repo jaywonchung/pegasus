@@ -70,11 +70,12 @@ impl Session {
         let mut buf = Vec::with_capacity(reader.buffer().len());
         loop {
             // Read into the buffer until either \r or \n is met.
-            for _ in 0..print_period {
-                read_until2(&mut reader, b'\r', b'\n', &mut buf)
+            // for _ in 0..print_period {
+                read_until2(&mut reader, b'\r', b'\n', &mut buf, print_period)
                     .await
                     .expect("Failed to read from stream.");
-            }
+            //     buf.clear();
+            // }
             // An empty buffer means that EOF was reached.
             if buf.is_empty() {
                 break;
@@ -124,13 +125,19 @@ async fn read_until2<B: AsyncRead + Unpin>(
     delimiter1: u8,
     delimiter2: u8,
     buf: &mut Vec<u8>,
+    mut skip: usize,
 ) -> std::io::Result<()> {
     loop {
         let (done, used) = {
             let available = reader.fill_buf().await?;
             if let Some(i) = memchr::memchr2(delimiter1, delimiter2, available) {
-                buf.extend_from_slice(&available[..=i]);
-                (true, i + 1)
+                if skip == 1 {
+                    buf.extend_from_slice(&available[..=i]);
+                    (true, i + 1)
+                } else {
+                    skip -= 1;
+                    (false, i + 1)
+                }
             } else {
                 buf.extend_from_slice(available);
                 (false, available.len())
