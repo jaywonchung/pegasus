@@ -70,12 +70,10 @@ impl Session {
         let mut buf = Vec::with_capacity(reader.buffer().len());
         loop {
             // Read into the buffer until either \r or \n is met.
-            // for _ in 0..print_period {
-                read_until2(&mut reader, b'\r', b'\n', &mut buf, print_period)
-                    .await
-                    .expect("Failed to read from stream.");
-            //     buf.clear();
-            // }
+            // Skip the first `print_period-1` occurances.
+            read_until2(&mut reader, b'\r', b'\n', &mut buf, print_period)
+                .await
+                .expect("Failed to read from stream.");
             // An empty buffer means that EOF was reached.
             if buf.is_empty() {
                 break;
