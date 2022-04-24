@@ -17,7 +17,7 @@ pub struct Session {
 
 impl Session {
     pub async fn connect(host: Host, color: Color) -> Self {
-        let session = SSHSession::connect(&host.hostname, KnownHosts::Add)
+        let session = SSHSession::connect_mux(&host.hostname, KnownHosts::Add)
             .await
             .unwrap_or_else(|_| panic!("{} Failed to connect to host.", host));
         let colorhost = host.prettify(color);

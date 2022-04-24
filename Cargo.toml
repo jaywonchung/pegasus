@@ -8,7 +8,7 @@ repository = "https://github.com/jaywonchung/pegasus"
 license = "MIT"
 
 [dependencies]
-openssh = { version = "0.9.0", features = ["native-mux"] }
+openssh = { version = "0.9.0", features = ["native-mux"], default-features = false }
 tokio = { version = "1", features = ["rt", "macros", "io-util", "time", "sync", "rt-multi-thread", "parking_lot", "signal"] }
 futures = "0.3"
 flume = { version = "0.10.10", features = ["async"] }
