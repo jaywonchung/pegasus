@@ -1,10 +1,10 @@
 use std::io::Write;
-use std::process::{ExitStatus, Stdio};
+use std::process::ExitStatus;
 
 use colored::ColoredString;
 use colourado::Color;
 use futures::future::join;
-use openssh::{KnownHosts, Session as SSHSession};
+use openssh::{KnownHosts, Session as SSHSession, Stdio};
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 
 use crate::host::Host;
@@ -42,7 +42,7 @@ impl Session {
         } else {
             process = process.stdout(Stdio::piped()).stderr(Stdio::piped())
         }
-        let mut process = process.spawn().expect("Failed to spawn ssh command.");
+        let mut process = process.spawn().await.expect("Failed to spawn ssh command.");
         if print_period != 0 {
             join(
                 self.stream(process.stdout().take().unwrap(), print_period),
