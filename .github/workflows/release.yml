@@ -21,6 +21,7 @@ jobs:
       - uses: katyo/publish-crates@v1
         with:
           registry-token: ${{ secrets.CRATES_IO_TOKEN }}
+          check-repo: false
 
   upload-assets:
     strategy:
