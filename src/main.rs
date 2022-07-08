@@ -57,6 +57,8 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
 
     // An atomic variable set whenever a session errors. Later read by
     // the scheduling loop to determine whether or not to exit.
+    // TODO: Make this a Vec of hostnames so that we can report which hosts
+    //       failed specifically.
     let errored = Arc::new(AtomicBool::new(false));
 
     let mut tasks = Vec::with_capacity(num_hosts);
