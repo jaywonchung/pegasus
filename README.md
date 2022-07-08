@@ -1,5 +1,5 @@
 <div align="center">
-<h1>Pegasus: A Multi-Node Command Runner</h1>
+<h1>Pegasus: A Multi-Node SSH Command Runner</h1>
 </div>
 
 Run a list of commands on a set of SSH nodes. With a bit of optional parametrization.

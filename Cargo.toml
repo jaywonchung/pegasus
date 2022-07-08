@@ -1,11 +1,13 @@
 [package]
 name = "pegasus"
-description = "Pegasus: A Simple Command Runner for Multiple Nodes"
+description = "Pegasus: A Multi-Node SSH Command Runner"
 authors = ["Jae-Won Chung <jwnchung@umich.edu>"]
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 repository = "https://github.com/jaywonchung/pegasus"
 license = "MIT"
+keywords = ["cli", "ssh"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 openssh = { version = "0.9.0", features = ["native-mux"], default-features = false }
