@@ -22,7 +22,7 @@ Run a list of commands on a set of SSH nodes. With a bit of optional parametriza
 
 To use Pegasus,
 
-1. Clone this repo (I'll soon release binaries, too).
+1. Install Pegasus, either from GitHub Release or `cargo install pegasus-ssh`.
 2. Setup passwordless SSH for your nodes.
 3. Populate `hosts.yaml` and `queue.yaml`, and run Pegasus.
 
@@ -47,7 +47,7 @@ Run four Python commands using two nodes.
 ```
 
 ```console
-$ cargo run -- q  # stands for Queue
+$ pegasus q  # stands for Queue
 ```
 
 ### Broadcast Mode: Terraforming Nodes
@@ -62,7 +62,7 @@ Run identical commands for multiple nodes.
 ```
 
 ```console
-$ cargo run -- b  # stands for Broadcast
+$ pegasus b  # stands for Broadcast
 ```
 
 ### Parallelizing Execution with Node Parameters
@@ -161,7 +161,7 @@ By providing a way to add to the queue while commands are still running, users m
 Lock mode will lock `queue.yaml` and launch a command line editor for you.
 
 ```console
-$ cargo run -- l --editor nvim  # l stands for Lock
+$ pegasus l --editor nvim  # l stands for Lock
 ```
 
 Editor priority is `--editor` > `$EDITOR` > `vim`.
@@ -172,7 +172,7 @@ When you save and exit, the queue lock is released and Pegasus is allowed access
 Enable daemon mode, and Pegasus will not terminate even if `queue.yaml` is empty. It will stand waiting for you to populate `queue.yaml` again, and execute them.
 
 ```console
-$ cargo run -- q --daemon
+$ pegasus q --daemon
 ```
 
 ## Details
