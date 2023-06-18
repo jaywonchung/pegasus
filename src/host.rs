@@ -78,11 +78,11 @@ impl FromStr for HostSpecInner {
     }
 }
 
-pub fn get_hosts() -> Vec<Host> {
-    // Read and parse hosts.yaml to a vector of HostSpec objects.
-    let hosts_file = File::open("hosts.yaml").expect("Failed to open hosts.yaml");
+pub fn get_hosts(hosts_file: &str) -> Vec<Host> {
+    // Read and parse the host file to a vector of HostSpec objects.
+    let hosts_fd = File::open(hosts_file).unwrap_or_else(|_| panic!("Failed to open {}", hosts_file));
     let host_specs: Vec<HostSpec> =
-        serde_yaml::from_reader(hosts_file).expect("Failed to parse hosts.yaml");
+        serde_yaml::from_reader(hosts_fd).unwrap_or_else(|_| panic!("Failed to parse {}", hosts_file));
 
     // All entries that are parametrized (i.e., not bare strings)
     // should have the key 'hostname'.
@@ -90,7 +90,7 @@ pub fn get_hosts() -> Vec<Host> {
         .iter()
         .all(|spec| spec.0 .0.contains_key("hostname"))
     {
-        panic!("A parametrized entry in hosts.yaml is missing the 'hostname' key.");
+        panic!("A parametrized entry in {} is missing the 'hostname' key.", hosts_file);
     }
 
     // Cartesian product.

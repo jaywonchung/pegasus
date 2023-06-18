@@ -1,0 +1,9 @@
+- hostname:
+    - node1
+    - node2
+  laziness:
+    - 1
+- hostname:
+    - node3
+  laziness:
+    - 2

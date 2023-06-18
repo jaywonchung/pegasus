@@ -67,12 +67,14 @@ impl FromStr for JobSpecInner {
 
 pub struct JobQueue {
     fetched: Vec<Cmd>,
+    queue_file: String,
 }
 
 impl JobQueue {
-    pub fn new() -> Self {
+    pub fn new(queue_file: &str) -> Self {
         Self {
             fetched: Vec::new(),
+            queue_file: queue_file.to_owned(),
         }
     }
 
@@ -80,14 +82,14 @@ impl JobQueue {
         if self.fetched.is_empty() {
             self.fetch().await;
         }
-        // When queue.yaml is empty, calling `fetch` will leave
+        // When the queue file is empty, calling `fetch` will leave
         // `self.fetched` an empty vector. Thus, `None` is returned.
         self.fetched.pop()
     }
 
     async fn fetch(&mut self) {
         loop {
-            let queue_file = LockedFile::acquire(".lock", "queue.yaml").await;
+            let queue_file = LockedFile::acquire(&self.queue_file).await;
             let file = queue_file.read_handle();
             let job_specs: Result<Vec<JobSpec>, _> = serde_yaml::from_reader(file);
             if let Ok(mut job_specs) = job_specs {
@@ -104,10 +106,10 @@ impl JobQueue {
                     continue;
                 }
 
-                // Job spec looks good. Remove it from queue.yaml.
+                // Job spec looks good. Remove it from the queue file.
                 // Strip the YAML metadata separator "---\n".
                 let writer = StripPrefixWriter::new(queue_file.write_handle(), 4);
-                serde_yaml::to_writer(writer, &job_specs).expect("Failed to update queue.yaml");
+                serde_yaml::to_writer(writer, &job_specs).expect("Failed to update the queue file");
 
                 // Move the job to consumed.yaml.
                 let write_handle = OpenOptions::new()
@@ -145,7 +147,8 @@ impl JobQueue {
             } else {
                 drop(queue_file);
                 eprintln!(
-                    "[Pegasus] Failed to parse queue.yaml: {}",
+                    "[Pegasus] Failed to parse {}: {}",
+                    &self.queue_file,
                     job_specs.unwrap_err()
                 );
                 eprintln!("[Pegasus] Wait 5 seconds for fix...");

@@ -14,7 +14,7 @@ pub struct Config {
     #[clap(arg_enum)]
     pub mode: Mode,
 
-    /// Don't terminate when done; watch queue.yaml for more jobs
+    /// Don't terminate when done; watch the queue file for more jobs
     #[clap(long, short)]
     pub daemon: bool,
 
@@ -22,13 +22,21 @@ pub struct Config {
     #[clap(long, short)]
     pub error_aborts: bool,
 
-    /// (Lock mode) Which editor to use to open queue.yaml
+    /// (Lock mode) Which editor to use to open the queue file
     #[clap(long)]
     pub editor: Option<String>,
 
     /// How often to print output. Giving 0 will suppress stdout/stderr.
     #[clap(long, short, default_value = "1")]
     pub print_period: usize,
+
+    /// Queue file to use. Defaults to `queue.yaml`
+    #[clap(long, default_value = "queue.yaml")]
+    pub queue_file: String,
+
+    /// Host file to use. Defaults to `hosts.yaml`
+    #[clap(long, default_value = "hosts.yaml")]
+    pub hosts_file: String,
 }
 
 #[derive(PartialEq, Clone, ArgEnum)]

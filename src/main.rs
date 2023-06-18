@@ -32,7 +32,7 @@ use crate::session::Session;
 use crate::sync::LockedFile;
 
 async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
-    let hosts = get_hosts();
+    let hosts = get_hosts(&cli.hosts_file);
     let num_hosts = hosts.len();
 
     // Set handler for Ctrl-c. This will set the `cancelled` variable to
@@ -90,9 +90,9 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
         }));
     }
 
-    // The scheduling loop that fetches jobs from queue.yaml and distributes them
-    // to SSH sessions.
-    let mut job_queue = JobQueue::new();
+    // The scheduling loop that fetches jobs from the queue file and distributes
+    // them to SSH sessions.
+    let mut job_queue = JobQueue::new(&cli.queue_file);
     loop {
         // Check cancel.
         if *cancelled.lock().await {
@@ -130,7 +130,7 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
 }
 
 async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
-    let hosts = get_hosts();
+    let hosts = get_hosts(&cli.hosts_file);
     let num_hosts = hosts.len();
 
     // Set handler for Ctrl-c. This will set the `cancelled` variable to
@@ -185,7 +185,7 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
 
     // The scheduling loop that fetches jobs from the job queue and distributes
     // them to SSH sessions.
-    let mut job_queue = JobQueue::new();
+    let mut job_queue = JobQueue::new(&cli.queue_file);
     let mut host_index;
     loop {
         // `recv_async` will allow the scheduler to react to a new free session
@@ -239,12 +239,13 @@ async fn run_lock(cli: &Config) {
             Err(_) => "vim".into(),
         },
     };
-    let _queue_file = LockedFile::acquire(".lock", "queue.yaml").await;
+
+    let _queue_file = LockedFile::acquire(&cli.queue_file).await;
     let mut command = std::process::Command::new(&editor);
     command
-        .arg("queue.yaml")
+        .arg(&cli.queue_file)
         .status()
-        .unwrap_or_else(|_| panic!("Failed to execute '{} queue.yaml'.", editor));
+        .unwrap_or_else(|_| panic!("Failed to execute '{} {}'.", editor, &cli.queue_file));
 }
 
 #[tokio::main]
