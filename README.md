@@ -201,14 +201,9 @@ In this case, we would want to prepend a undo command for `command2` (e.g., `rm 
 
 There is also a `-e` or `--error-aborts` flag in Broadcast Mode, which aborts Pegasus automatically when a host fails on a command.
 
-### Ctrl-c Behavior
+### Cancelling and killing
 
-Pegasus tries to implement graceful termination upon ctrl-c. The following happens:
-
-1. User presses ctrl-c on terminal.
-2. Pegasus's ctrl-c handler wakes up and sends out a cancellation notice.
-3. The scheduling loop detects this notice and `break`s right before attempting to fetch from `queue.yaml`.
-    - It may take some time for the scheduling loop to detect this based on what state it's currently in, but it is guaranteed that once the cancellation notice has been sent out, `queue.yaml` will not change and new commands will not start executing.
-4. Commands that are already running **will run until completion**. SSH sessions will close their connections whenever they're free.
-    - If you really want everything to burn down, consider running something like `killall pegasus; killall ssh; rm -rf .ssh-connection*`.
-5. When all commands finish, Pegasus will exit.
+It is very difficult to find a generic way to cancel commands that started running via SSH (See [#11](https://github.com/jaywonchung/pegasus/issues/11)).
+Therefore, the caveat of Pegasus at the moment is that it works very well when things go well, but it's difficult to cancel and kill when things go not quite as planned.
+You need to walk into every node and manually kill commands.
+That said, you can still use Broadcast mode to automate that.
