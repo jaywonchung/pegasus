@@ -70,7 +70,9 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
         let print_period = cli.print_period;
         tasks.push(tokio::spawn(async move {
             // Open a new SSH session with the host.
-            let session = Session::connect(host, color).await.expect("Failed to connect to host");
+            let session = Session::connect(host, color)
+                .await
+                .expect("Failed to connect to host");
             // Handlebars registry for filling in parameters.
             let mut registry = Handlebars::new();
             // When cancellation is triggered by the ctrlc handler, the
@@ -161,7 +163,9 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
         let print_period = cli.print_period;
         tasks.push(tokio::spawn(async move {
             // Open a new SSH session with the host.
-            let session = Session::connect(host, color).await.expect("Failed to connect to host");
+            let session = Session::connect(host, color)
+                .await
+                .expect("Failed to connect to host");
             // Handlebars registry for filling in parameters.
             let mut registry = Handlebars::new();
             // When cancellation happens, the scheduling loop will detect that and drop
