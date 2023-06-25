@@ -177,9 +177,14 @@ $ pegasus q --daemon
 
 ## Details
 
+### Pegasus uses `sh -c` to run commands
+
+The commands you put in `queue.yaml` are wrapped individually inside `sh -c` and executed via SSH.
+In your hosts, `sh` may be symlinked to `bash`, `dash`, or something else, and certain syntax may or may not be allowed (e.g., double brackets).
+
 ### `queue.yaml`
 
-This is the queue file. Entries in `queue.yaml` are consumed from the top, one by one. Also, entries are consumed only when a new host is available to execute new commands. Consumed entries are immediately appended to `consumed.yaml` in "canonical form", where every entry has a `command` key. Thus you might do something like `tail -n 2 consumed.yaml > queue.yaml` to re-execute your previous single-line command.
+This is the queue file. Entries in `queue.yaml` are consumed from the top, one by one. Also, entries are consumed only when a new host is available to execute new commands. Consumed entries are immediately appended to `consumed.yaml` in "canonical form", where every entry has a `command` key. Thus, you might do something like `tail -n 2 consumed.yaml > queue.yaml` to re-execute your previous single-line command.
 
 As mentioned earlier, always use the Lock Mode when you need to modify `queue.yaml`.
 

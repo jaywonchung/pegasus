@@ -70,7 +70,7 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
         let print_period = cli.print_period;
         tasks.push(tokio::spawn(async move {
             // Open a new SSH session with the host.
-            let session = Session::connect(host, color).await;
+            let session = Session::connect(host, color).await.expect("Failed to connect to host");
             // Handlebars registry for filling in parameters.
             let mut registry = Handlebars::new();
             // When cancellation is triggered by the ctrlc handler, the
@@ -91,7 +91,9 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
     }
 
     // The scheduling loop that fetches jobs from the queue file and distributes
-    // them to SSH sessions.
+    // them to SSH sessions. Wait 0.5s so that we don't touch the queue file
+    // when some sesions fail to connect.
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
     let mut job_queue = JobQueue::new(&cli.queue_file);
     loop {
         // Check cancel.
@@ -159,7 +161,7 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
         let print_period = cli.print_period;
         tasks.push(tokio::spawn(async move {
             // Open a new SSH session with the host.
-            let session = Session::connect(host, color).await;
+            let session = Session::connect(host, color).await.expect("Failed to connect to host");
             // Handlebars registry for filling in parameters.
             let mut registry = Handlebars::new();
             // When cancellation happens, the scheduling loop will detect that and drop

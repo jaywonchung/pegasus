@@ -16,17 +16,22 @@ pub struct Session {
 }
 
 impl Session {
-    pub async fn connect(host: Host, color: Color) -> Self {
-        let session = SSHSession::connect_mux(&host.hostname, KnownHosts::Add)
-            .await
-            .unwrap_or_else(|_| panic!("{} Failed to connect to host.", host));
+    pub async fn connect(host: Host, color: Color) -> Result<Self, openssh::Error> {
         let colorhost = host.prettify(color);
+        let session = match SSHSession::connect_mux(&host.hostname, KnownHosts::Add).await {
+            Ok(session) => session,
+            Err(e) => {
+                eprintln!("{} Failed to connect to host: {:?}", colorhost, e);
+                tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+                return Err(e);
+            }
+        };
         eprintln!("{} Connected to host.", colorhost);
-        Self {
+        Ok(Self {
             host,
             colorhost,
             session,
-        }
+        })
     }
 
     pub async fn run(

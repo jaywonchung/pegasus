@@ -388,16 +388,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "io-lifetimes"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9448015e586b611e5d322f6703812bbca2f1e709d5773ecd38ddb4e3bb649504"
-dependencies = [
- "libc",
- "winapi",
-]
-
-[[package]]
 name = "itertools"
 version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -429,9 +419,9 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "libc"
-version = "0.2.124"
+version = "0.2.146"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21a41fed9d98f27ab1c6d161da622a4fa35e8a54a8adc24bbf3ddd0ef70b0e50"
+checksum = "f92be4933c13fd498862a9e02a3055f8a8d9c039ce33db97306fd5a6caa7f29b"
 
 [[package]]
 name = "linked-hash-map"
@@ -535,26 +525,26 @@ checksum = "2839e79665f131bdb5782e51f2c6c9599c133c6098982a54c794358bf432529c"
 
 [[package]]
 name = "openssh"
-version = "0.9.0"
+version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "566e6cbfdad73f80b787b143cf3b6711375a627a54c53bb7ae129545d3d9e20d"
+checksum = "8ca6c277973fb549b36dd8980941b5ea3ecebea026f5b1f0060acde74d893c22"
 dependencies = [
  "dirs",
- "io-lifetimes",
  "libc",
  "once_cell",
  "openssh-mux-client",
  "shell-escape",
  "tempfile",
+ "thiserror",
  "tokio",
  "tokio-pipe",
 ]
 
 [[package]]
 name = "openssh-mux-client"
-version = "0.15.0"
+version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5ec8444a532b861c847685345e681301ff9d424416afc83c78ed7561f58cd5b"
+checksum = "88eac793af6170bcd6d4f39c3b7ba3f4227cab5680d7189ba30f9d174600b75f"
 dependencies = [
  "once_cell",
  "sendfd",
@@ -1101,9 +1091,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-io-utility"
-version = "0.6.6"
+version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6cc20e2972c16be58777da5c3f7002bfa2d9c534bfd883b0eb6cb8a0e545284"
+checksum = "8d672654d175710e52c7c41f6aec77c62b3c0954e2a7ebce9049d1e94ed7c263"
 dependencies = [
  "tokio",
 ]
