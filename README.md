@@ -175,6 +175,32 @@ Enable daemon mode, and Pegasus will not terminate even if `queue.yaml` is empty
 $ pegasus q --daemon
 ```
 
+### Advanced templating with Handlebars
+
+[Handlebars](https://handlebarsjs.com/) is a templating engine, and Pegasus uses Handlebars to fill in parameters into `hostname`s and `command`s.
+
+Look at this example to see how this can be useful:
+```yaml
+# queue.yaml
+- command:
+  - python main.py --model-path {{ model }} --output-path {{ replace model "/" "--" }}.json
+- model:
+  - facebook/opt-13b
+  - facebook/opt-30b
+  - facebook/opt-66b
+```
+
+The commands above expand to:
+```yaml
+# queue.yaml
+- python main.py --model-path facebook/opt-13b --output-path facebook--opt-13b.json
+- python main.py --model-path facebook/opt-30b --output-path facebook--opt-30b.json
+- python main.py --model-path facebook/opt-66b --output-path facebook--opt-66b.json
+```
+
+Here, `facebook/opt-13b` is the name of the model in one chunk (and you need it to have the `/` so that [Hugging Face understands it](https://huggingface.co/facebook/opt-13b)), but if you just tell your script to output results in `facebook/opt-13b.json`, it'll create a directory called `facebook` and save `opt-13b.json` inside it. That's not good.
+Instead, we just used the `replace` helper from the *String transformation* section of [`handlebars_misc_helpers`](https://github.com/davidB/handlebars_misc_helpers#string-transformation) to pretty much run `model.replace("/", "--")`.
+
 ## Details
 
 ### Pegasus uses `sh -c` to run commands
