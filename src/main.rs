@@ -75,6 +75,7 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
                 .expect("Failed to connect to host");
             // Handlebars registry for filling in parameters.
             let mut registry = Handlebars::new();
+            handlebars_misc_helpers::register(&mut registry);
             // When cancellation is triggered by the ctrlc handler, the
             // scheduling loop will see that, break, and drop `command_tx`.
             // Then `command_rx.recv()` will return `Err`, allowing the

@@ -120,6 +120,17 @@ pub fn get_hosts(hosts_file: &str) -> Vec<Host> {
             }
             expanded = part_expanded;
         }
+        // Fill in parameters with Handlebars.
+        let mut registry = handlebars::Handlebars::new();
+        handlebars_misc_helpers::register(&mut registry);
+        for host in expanded.iter_mut() {
+            if !registry.has_template(&host.hostname) {
+                registry
+                    .register_template_string(&host.hostname, &host.hostname)
+                    .unwrap();
+            }
+            host.hostname = registry.render(&host.hostname, &host.params).unwrap();
+        }
         hosts.push(expanded);
     }
 
