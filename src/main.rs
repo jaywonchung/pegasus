@@ -169,6 +169,7 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
                 .expect("Failed to connect to host");
             // Handlebars registry for filling in parameters.
             let mut registry = Handlebars::new();
+            handlebars_misc_helpers::register(&mut registry);
             // When cancellation happens, the scheduling loop will detect that and drop
             // `notify_rx` and `command_tx`. Thus we can break out of the loop and
             // gracefully terminate the session.
