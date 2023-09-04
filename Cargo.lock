@@ -784,7 +784,7 @@ dependencies = [
 
 [[package]]
 name = "pegasus-ssh"
-version = "1.1.0"
+version = "1.1.2"
 dependencies = [
  "clap",
  "colored",
