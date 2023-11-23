@@ -83,7 +83,7 @@ impl Session for LocalSession {
     async fn run(&self, job: String, print_period: usize) -> Result<ExitStatus, PegasusError> {
         println!("{} === run '{}' ===", self.colorhost, job);
         let mut cmd = Command::new("sh");
-        let mut process = cmd.arg("-c").arg(format!("{}", &job));
+        let mut process = cmd.arg("-c").arg(&job);
         if print_period == 0 {
             process = process
                 .stdout(std::process::Stdio::null())
