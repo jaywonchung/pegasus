@@ -3,7 +3,6 @@
 //! One SSH connection is created for one `Host`. Each connection will run commands in parallel with
 //! other connections in its own tokio task.
 
-use colourado::Color;
 use itertools::sorted;
 use std::collections::HashMap;
 use std::fmt;
@@ -11,10 +10,14 @@ use std::fs::File;
 use std::str::FromStr;
 
 use colored::*;
+use colourado::Color;
+use openssh::{KnownHosts, Session as SSHSession};
 use serde::Deserialize;
 use void::Void;
 
+use crate::error::PegasusError;
 use crate::serde::string_or_mapping;
+use crate::session::{LocalSession, RemoteSession, Session};
 
 #[derive(Debug, Clone)]
 pub struct Host {
@@ -30,6 +33,35 @@ impl Host {
             hostname,
             params: HashMap::new(),
         }
+    }
+
+    /// Connects to the host over SSH.
+    pub async fn connect(
+        &self,
+        color: Color,
+    ) -> Result<Box<dyn Session + Send + Sync>, PegasusError> {
+        let colorhost = self.prettify(color);
+        // Localhost does not need an SSH connection.
+        if self.is_localhost() {
+            eprintln!("{} Just spawning subprocess for localhost.", colorhost);
+            Ok(Box::new(LocalSession::new(colorhost)))
+        } else {
+            let session = match SSHSession::connect_mux(&self.hostname, KnownHosts::Add).await {
+                Ok(session) => session,
+                Err(e) => {
+                    eprintln!("{} Failed to connect to host: {:?}", colorhost, e);
+                    return Err(PegasusError::SshError(e));
+                }
+            };
+            eprintln!("{} Connected to host.", colorhost);
+            Ok(Box::new(RemoteSession::new(colorhost, session)))
+        }
+    }
+
+    /// Returns true if the host is localhost.
+    pub fn is_localhost(&self) -> bool {
+        let hostname = self.hostname.trim().to_lowercase();
+        hostname == "localhost" || hostname == "127.0.0.1" || hostname == "::1"
     }
 
     /// For pretty-printing the host name.

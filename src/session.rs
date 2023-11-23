@@ -1,57 +1,61 @@
+use std::fmt::Display;
 use std::io::Write;
 use std::process::ExitStatus;
 
+use async_trait::async_trait;
 use colored::ColoredString;
-use colourado::Color;
 use futures::future::join;
-use openssh::{KnownHosts, Session as SSHSession, Stdio};
+use openssh::Session as SSHSession;
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
+use tokio::process::Command;
 
-use crate::host::Host;
+use crate::error::PegasusError;
 
-pub struct Session {
-    pub host: Host,
+#[async_trait]
+pub trait Session {
+    /// Runs a job with the session.
+    async fn run(&self, job: String, print_period: usize) -> Result<ExitStatus, PegasusError>;
+}
+
+pub struct RemoteSession {
     colorhost: ColoredString,
     session: SSHSession,
 }
 
-impl Session {
-    pub async fn connect(host: Host, color: Color) -> Result<Self, openssh::Error> {
-        let colorhost = host.prettify(color);
-        let session = match SSHSession::connect_mux(&host.hostname, KnownHosts::Add).await {
-            Ok(session) => session,
-            Err(e) => {
-                eprintln!("{} Failed to connect to host: {:?}", colorhost, e);
-                tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-                return Err(e);
-            }
-        };
-        eprintln!("{} Connected to host.", colorhost);
-        Ok(Self {
-            host,
-            colorhost,
-            session,
-        })
+impl RemoteSession {
+    pub fn new(colorhost: ColoredString, session: SSHSession) -> Self {
+        Self { colorhost, session }
     }
+}
 
-    pub async fn run(
-        &self,
-        job: String,
-        print_period: usize,
-    ) -> Result<ExitStatus, openssh::Error> {
+#[async_trait]
+impl Session for RemoteSession {
+    async fn run(&self, job: String, print_period: usize) -> Result<ExitStatus, PegasusError> {
         println!("{} === run '{}' ===", self.colorhost, job);
         let mut cmd = self.session.command("sh");
         let mut process = cmd.arg("-c").raw_arg(format!("'{}'", &job));
         if print_period == 0 {
-            process = process.stdout(Stdio::null()).stderr(Stdio::null());
+            process = process
+                .stdout(openssh::Stdio::null())
+                .stderr(openssh::Stdio::null());
         } else {
-            process = process.stdout(Stdio::piped()).stderr(Stdio::piped())
+            process = process
+                .stdout(openssh::Stdio::piped())
+                .stderr(openssh::Stdio::piped())
         }
         let mut process = process.spawn().await.expect("Failed to spawn ssh command.");
         if print_period != 0 {
             join(
-                self.stream(process.stdout().take().unwrap(), print_period),
-                self.stream(process.stderr().take().unwrap(), print_period),
+                stream(
+                    &self.colorhost,
+                    process.stdout().take().unwrap(),
+                    print_period,
+                ),
+                stream(
+                    &self.colorhost,
+                    process.stderr().take().unwrap(),
+                    print_period,
+                ),
             )
             .await;
         }
@@ -60,63 +64,106 @@ impl Session {
             Ok(status) => println!("{} === done ({}) ===", self.colorhost, status),
             Err(error) => println!("{} === done (error: {}) ===", self.colorhost, error),
         };
-        result
+        result.map_err(PegasusError::SshError)
     }
+}
 
-    pub async fn close(self) {
-        eprintln!("{} Terminating connection.", self.colorhost);
-        if let Err(e) = self.session.close().await {
-            eprintln!("{} Error while terminating: {}", self.colorhost, e);
+pub struct LocalSession {
+    colorhost: ColoredString,
+}
+
+impl LocalSession {
+    pub fn new(colorhost: ColoredString) -> Self {
+        Self { colorhost }
+    }
+}
+
+#[async_trait]
+impl Session for LocalSession {
+    async fn run(&self, job: String, print_period: usize) -> Result<ExitStatus, PegasusError> {
+        println!("{} === run '{}' ===", self.colorhost, job);
+        let mut cmd = Command::new("sh");
+        let mut process = cmd.arg("-c").arg(format!("{}", &job));
+        if print_period == 0 {
+            process = process
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null());
+        } else {
+            process = process
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
         }
+        let mut process = process.spawn().expect("Failed to spawn command.");
+        if print_period != 0 {
+            join(
+                stream(
+                    &self.colorhost,
+                    process.stdout.take().unwrap(),
+                    print_period,
+                ),
+                stream(
+                    &self.colorhost,
+                    process.stderr.take().unwrap(),
+                    print_period,
+                ),
+            )
+            .await;
+        }
+        let result = process.wait().await;
+        match &result {
+            Ok(status) => println!("{} === done ({}) ===", self.colorhost, status),
+            Err(error) => println!("{} === done (error: {}) ===", self.colorhost, error),
+        };
+        result.map_err(PegasusError::LocalCommandError)
     }
+}
 
-    async fn stream<B: AsyncRead + Unpin>(&self, stream: B, print_period: usize) {
-        let mut reader = BufReader::new(stream);
-        let mut buf = Vec::with_capacity(reader.buffer().len());
+async fn stream<B: AsyncRead + Unpin, D: Display>(prefix: D, stream: B, print_period: usize) {
+    let mut reader = BufReader::new(stream);
+    let mut buf = Vec::with_capacity(reader.buffer().len());
+    loop {
+        // Read into the buffer until either \r or \n is met.
+        // Skip the first `print_period-1` occurances.
+        read_until2(&mut reader, b'\r', b'\n', &mut buf, print_period)
+            .await
+            .expect("Failed to read from stream.");
+        // An empty buffer means that EOF was reached.
+        if buf.is_empty() {
+            break;
+        }
+        // Print as we decode.
+        // Without the lock, when multiple commands output to stdout,
+        // lines from different commands get mixed.
+        let stdout = std::io::stdout();
+        let mut guard = stdout.lock();
+        write!(guard, "{} ", prefix).unwrap();
         loop {
-            // Read into the buffer until either \r or \n is met.
-            // Skip the first `print_period-1` occurances.
-            read_until2(&mut reader, b'\r', b'\n', &mut buf, print_period)
-                .await
-                .expect("Failed to read from stream.");
-            // An empty buffer means that EOF was reached.
-            if buf.is_empty() {
-                break;
-            }
-            // Print as we decode.
-            // Without the lock, when multiple commands output to stdout,
-            // lines from different commands get mixed.
-            let stdout = std::io::stdout();
-            let mut guard = stdout.lock();
-            write!(guard, "{} ", self.colorhost).unwrap();
-            loop {
-                // This loop will not infinitely loop because `from_utf8` returns `Ok`
-                // when `buf` is empty.
-                match std::str::from_utf8(&buf) {
-                    Ok(valid) => {
-                        // Ok means that the entire `buf` is valid. We print everything
-                        // happily and break out of the loop.
-                        // The buffer populated by `read_until2` includes the delimiter.
-                        writeln!(guard, "{}", &valid[..valid.len() - 1]).unwrap();
-                        buf.clear();
-                        break;
-                    }
-                    Err(error) => {
-                        // The decoder met an invaild UTF-8 byte sequence while decoding.
-                        // We print up to `valid_len`, drain the buffer (including the
-                        // length of the error'ed bytes) and try decoding again.
-                        let valid_len = error.valid_up_to();
-                        let error_len = error.error_len().expect("read_until2 cuts off UTF-8.");
-                        write!(
-                            guard,
-                            "{}\u{FFFD}",
-                            // SAFETY: `error.valid_up_to()` guarantees that up to that
-                            //         index, all characters are valid UTF-8.
-                            unsafe { std::str::from_utf8_unchecked(&buf[..valid_len]) },
-                        )
-                        .unwrap();
-                        buf.drain(..valid_len + error_len);
-                    }
+            // This loop will not infinitely loop because `from_utf8` returns `Ok`
+            // when `buf` is empty.
+            match std::str::from_utf8(&buf) {
+                Ok(valid) => {
+                    // Ok means that the entire `buf` is valid. We print everything
+                    // happily and break out of the loop.
+                    // The buffer populated by `read_until2` includes the delimiter.
+                    writeln!(guard, "{}", &valid[..valid.len() - 1]).unwrap();
+                    buf.clear();
+                    break;
+                }
+                Err(error) => {
+                    // The decoder met an invaild UTF-8 byte sequence while decoding.
+                    // We print up to `valid_len`, drain the buffer (including the
+                    // length of the error'ed bytes) and try decoding again.
+                    let valid_len = error.valid_up_to();
+                    let error_len = error.error_len().expect("read_until2 cuts off UTF-8.");
+                    write!(
+                        guard,
+                        "{}\u{FFFD}",
+                        // SAFETY: `error.valid_up_to()` guarantees that up to that
+                        //         index, all characters are valid UTF-8.
+                        unsafe { std::str::from_utf8_unchecked(&buf[..valid_len]) },
+                    )
+                    .unwrap();
+                    buf.drain(..valid_len + error_len);
                 }
             }
         }

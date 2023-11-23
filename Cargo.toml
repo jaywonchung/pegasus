@@ -2,7 +2,7 @@
 name = "pegasus-ssh"
 description = "Pegasus: A Multi-Node SSH Command Runner"
 authors = ["Jae-Won Chung <jaewon.chung.cs@gmail.com>"]
-version = "1.1.3"
+version = "1.2.0"
 edition = "2021"
 repository = "https://github.com/jaywonchung/pegasus"
 license = "MIT"
@@ -28,6 +28,8 @@ handlebars_misc_helpers = { version = "0.13.0", features = ["string", "json"] }
 colored = "2"
 colourado = "0.2.0"
 memchr = "2.4.1"
+thiserror = "1.0.50"
+async-trait = "0.1.74"
 
 [profile.release]
 panic = "abort"

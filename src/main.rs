@@ -12,6 +12,8 @@ mod sync;
 mod session;
 // Provides utility for std::io::Writer
 mod writer;
+// Error handling.
+mod error;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -26,12 +28,12 @@ use tokio::sync::{broadcast, Barrier, Mutex};
 use tokio::time;
 
 use crate::config::{Config, Mode};
+use crate::error::PegasusError;
 use crate::host::get_hosts;
 use crate::job::Cmd;
-use crate::session::Session;
 use crate::sync::LockedFile;
 
-async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
+async fn run_broadcast(cli: &Config) -> Result<(), PegasusError> {
     let hosts = get_hosts(&cli.hosts_file);
     let num_hosts = hosts.len();
 
@@ -68,11 +70,9 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
         let end_barrier = Arc::clone(&end_barrier);
         let errored = Arc::clone(&errored);
         let print_period = cli.print_period;
+        // Open a new SSH session with the host.
+        let session = host.connect(color).await?;
         tasks.push(tokio::spawn(async move {
-            // Open a new SSH session with the host.
-            let session = Session::connect(host, color)
-                .await
-                .expect("Failed to connect to host");
             // Handlebars registry for filling in parameters.
             let mut registry = Handlebars::new();
             handlebars_misc_helpers::register(&mut registry);
@@ -82,14 +82,13 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
             // session object to be dropped, and everyting gracefully
             // terminated.
             while let Ok(cmd) = command_rx.recv().await {
-                let cmd = cmd.fill_template(&mut registry, &session.host);
+                let cmd = cmd.fill_template(&mut registry, &host);
                 let result = session.run(cmd, print_period).await;
                 if result.is_err() || result.unwrap().code() != Some(0) {
                     errored.store(true, Ordering::Relaxed);
                 }
                 end_barrier.wait().await;
             }
-            session.close().await;
         }));
     }
 
@@ -134,7 +133,7 @@ async fn run_broadcast(cli: &Config) -> Result<(), openssh::Error> {
     Ok(())
 }
 
-async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
+async fn run_queue(cli: &Config) -> Result<(), PegasusError> {
     let hosts = get_hosts(&cli.hosts_file);
     let num_hosts = hosts.len();
 
@@ -162,11 +161,9 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
         command_txs.push(command_tx);
         let notify_tx = notify_tx.clone();
         let print_period = cli.print_period;
+        // Open a new SSH session with the host.
+        let session = host.connect(color).await?;
         tasks.push(tokio::spawn(async move {
-            // Open a new SSH session with the host.
-            let session = Session::connect(host, color)
-                .await
-                .expect("Failed to connect to host");
             // Handlebars registry for filling in parameters.
             let mut registry = Handlebars::new();
             handlebars_misc_helpers::register(&mut registry);
@@ -181,13 +178,12 @@ async fn run_queue(cli: &Config) -> Result<(), openssh::Error> {
                 // Receive and run the command.
                 match command_rx.recv_async().await {
                     Ok(cmd) => {
-                        let cmd = cmd.fill_template(&mut registry, &session.host);
+                        let cmd = cmd.fill_template(&mut registry, &host);
                         let _ = session.run(cmd, print_period).await;
                     }
                     Err(_) => break,
                 };
             }
-            session.close().await;
         }));
     }
 
@@ -257,7 +253,7 @@ async fn run_lock(cli: &Config) {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), openssh::Error> {
+async fn main() -> Result<(), PegasusError> {
     let cli = Config::parse();
 
     match cli.mode {
