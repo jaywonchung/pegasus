@@ -96,7 +96,7 @@ async fn run_broadcast(cli: &Config) -> Result<(), PegasusError> {
     // them to SSH sessions. Wait 0.5s so that we don't touch the queue file
     // when some sesions fail to connect.
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-    let mut job_queue = JobQueue::new(&cli.queue_file);
+    let mut job_queue = JobQueue::new(&cli.queue_file, Arc::clone(&cancelled));
     loop {
         // Check cancel.
         if *cancelled.lock().await {
@@ -130,6 +130,13 @@ async fn run_broadcast(cli: &Config) -> Result<(), PegasusError> {
     // Wait for all session tasks to finish cleanup.
     join_all(tasks).await;
 
+    // TODO: Better reporting of which command failed on which host.
+    if errored.load(Ordering::SeqCst) {
+        eprintln!("[Pegasus] Some commands failed.");
+    } else {
+        eprintln!("[Pegasus] All commands finished successfully.");
+    }
+
     Ok(())
 }
 
@@ -149,6 +156,12 @@ async fn run_queue(cli: &Config) -> Result<(), PegasusError> {
         *cancelled_handler.lock().await = true;
     });
 
+    // An atomic variable set whenever a session errors. Later read by
+    // the scheduling loop to determine whether or not to exit.
+    // TODO: Make this a Vec of hostnames so that we can report which hosts
+    //       failed specifically.
+    let errored = Arc::new(AtomicBool::new(false));
+
     // MPMC channel (used as MPSC) for requesting the scheduling loop a new command.
     let (notify_tx, notify_rx) = flume::bounded(hosts.len());
 
@@ -161,6 +174,7 @@ async fn run_queue(cli: &Config) -> Result<(), PegasusError> {
         command_txs.push(command_tx);
         let notify_tx = notify_tx.clone();
         let print_period = cli.print_period;
+        let errored = Arc::clone(&errored);
         // Open a new SSH session with the host.
         let session = host.connect(color).await?;
         tasks.push(tokio::spawn(async move {
@@ -179,7 +193,10 @@ async fn run_queue(cli: &Config) -> Result<(), PegasusError> {
                 match command_rx.recv_async().await {
                     Ok(cmd) => {
                         let cmd = cmd.fill_template(&mut registry, &host);
-                        let _ = session.run(cmd, print_period).await;
+                        let result = session.run(cmd, print_period).await;
+                        if result.is_err() || result.unwrap().code() != Some(0) {
+                            errored.store(true, Ordering::Relaxed);
+                        }
                     }
                     Err(_) => break,
                 };
@@ -189,7 +206,7 @@ async fn run_queue(cli: &Config) -> Result<(), PegasusError> {
 
     // The scheduling loop that fetches jobs from the job queue and distributes
     // them to SSH sessions.
-    let mut job_queue = JobQueue::new(&cli.queue_file);
+    let mut job_queue = JobQueue::new(&cli.queue_file, Arc::clone(&cancelled));
     let mut host_index;
     loop {
         // `recv_async` will allow the scheduler to react to a new free session
@@ -232,6 +249,13 @@ async fn run_queue(cli: &Config) -> Result<(), PegasusError> {
     // Wait for all of them to finish.
     join_all(tasks).await;
 
+    // TODO: Better reporting of which command failed on which host.
+    if errored.load(Ordering::SeqCst) {
+        eprintln!("[Pegasus] Some commands failed.");
+    } else {
+        eprintln!("[Pegasus] All commands finished successfully.");
+    }
+
     Ok(())
 }
 
@@ -263,6 +287,9 @@ async fn main() -> Result<(), PegasusError> {
         }
         Mode::Queue => {
             eprintln!("[Pegasus] Running in queue mode!");
+            if cli.error_aborts {
+                eprintln!("[Pegasus] Queue mode does not support aborting on error (-e).");
+            }
             run_queue(&cli).await?;
         }
         Mode::Lock => {

@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use handlebars::Handlebars;
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 use tokio::time;
 use void::Void;
 
@@ -68,13 +70,15 @@ impl FromStr for JobSpecInner {
 pub struct JobQueue {
     fetched: Vec<Cmd>,
     queue_file: String,
+    cancelled: Arc<Mutex<bool>>,
 }
 
 impl JobQueue {
-    pub fn new(queue_file: &str) -> Self {
+    pub fn new(queue_file: &str, cancelled: Arc<Mutex<bool>>) -> Self {
         Self {
             fetched: Vec::new(),
             queue_file: queue_file.to_owned(),
+            cancelled,
         }
     }
 
@@ -90,6 +94,12 @@ impl JobQueue {
     async fn fetch(&mut self) {
         loop {
             let queue_file = LockedFile::acquire(&self.queue_file).await;
+            // This handles the case where the user killed Pegasus while having
+            // the queue file open in lock mode.
+            if *self.cancelled.lock().await {
+                eprintln!("[pegasus] Ctrl-c detected. Not fetching another job.");
+                return;
+            }
             let file = queue_file.read_handle();
             let job_specs: Result<Vec<JobSpec>, _> = serde_yaml::from_reader(file);
             if let Ok(mut job_specs) = job_specs {
