@@ -1,9 +1,9 @@
 - hostname:
-    - node1
-    - node2
+    - localhost
+    - localhost
   laziness:
-    - 1
+    - 5
 - hostname:
-    - node3
+    - localhost
   laziness:
-    - 2
+    - 10
