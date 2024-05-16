@@ -4,8 +4,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use handlebars::Handlebars;
-use serde::{Deserialize, Serialize, Serializer};
 use serde::ser::SerializeMap;
+use serde::{Deserialize, Serialize, Serializer};
 use tokio::sync::Mutex;
 use tokio::time;
 use void::Void;
@@ -155,7 +155,10 @@ impl JobQueue {
 
                 // Take the first command and put the rest back to the beginning of job specs.
                 let next_command = job.remove(0);
-                let remaining: Vec<_> = job.into_iter().map(|cmd| JobSpec(JobSpecInner(cmd.into_map()))).collect();
+                let remaining: Vec<_> = job
+                    .into_iter()
+                    .map(|cmd| JobSpec(JobSpecInner(cmd.into_map())))
+                    .collect();
                 job_specs = [remaining, job_specs].concat();
 
                 // Job spec looks good. Remove it from the queue file.
@@ -171,8 +174,11 @@ impl JobQueue {
                     .expect("Failed to open consumed.yaml.");
                 // Strip the YAML metadata separator "---\n".
                 let writer = StripPrefixWriter::new(write_handle, 4);
-                serde_yaml::to_writer(writer, &vec![JobSpec(JobSpecInner(next_command.clone().into_map()))])
-                    .expect("Failed to update consumed.yaml");
+                serde_yaml::to_writer(
+                    writer,
+                    &vec![JobSpec(JobSpecInner(next_command.clone().into_map()))],
+                )
+                .expect("Failed to update consumed.yaml");
 
                 return Some(next_command);
             } else {
