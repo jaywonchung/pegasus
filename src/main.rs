@@ -120,7 +120,6 @@ async fn run_broadcast(cli: &Config) -> Result<(), PegasusError> {
             // Break out of the scheduling loop.
             break;
         }
-        eprintln!("[Pegasus] Queue drained. Waiting 3 seconds...");
         time::sleep(time::Duration::from_secs(3)).await;
     }
 
@@ -236,7 +235,6 @@ async fn run_queue(cli: &Config) -> Result<(), PegasusError> {
         }
         // Queue is empty but either we're in deamon mode or not all commands
         // finished running. So we wait.
-        eprintln!("[Pegasus] Queue drained. Waiting 3 seconds...");
         time::sleep(time::Duration::from_secs(3)).await;
     }
 
