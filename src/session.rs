@@ -14,7 +14,7 @@ use crate::error::PegasusError;
 #[async_trait]
 pub trait Session {
     /// Runs a job with the session.
-    async fn run(&self, job: String, print_period: usize) -> Result<ExitStatus, PegasusError>;
+    async fn run(&self, job: &str, print_period: usize) -> Result<ExitStatus, PegasusError>;
 }
 
 pub struct RemoteSession {
@@ -30,10 +30,10 @@ impl RemoteSession {
 
 #[async_trait]
 impl Session for RemoteSession {
-    async fn run(&self, job: String, print_period: usize) -> Result<ExitStatus, PegasusError> {
+    async fn run(&self, job: &str, print_period: usize) -> Result<ExitStatus, PegasusError> {
         println!("{} === run '{}' ===", self.colorhost, job);
         let mut cmd = self.session.command("sh");
-        let mut process = cmd.arg("-c").raw_arg(format!("'{}'", &job));
+        let mut process = cmd.arg("-c").raw_arg(format!("'{}'", job));
         if print_period == 0 {
             process = process
                 .stdout(openssh::Stdio::null())
@@ -80,10 +80,10 @@ impl LocalSession {
 
 #[async_trait]
 impl Session for LocalSession {
-    async fn run(&self, job: String, print_period: usize) -> Result<ExitStatus, PegasusError> {
+    async fn run(&self, job: &str, print_period: usize) -> Result<ExitStatus, PegasusError> {
         println!("{} === run '{}' ===", self.colorhost, job);
         let mut cmd = Command::new("sh");
-        let mut process = cmd.arg("-c").arg(&job);
+        let mut process = cmd.arg("-c").arg(job);
         if print_period == 0 {
             process = process
                 .stdout(std::process::Stdio::null())

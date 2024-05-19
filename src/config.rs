@@ -18,9 +18,9 @@ pub struct Config {
     #[clap(long, short)]
     pub daemon: bool,
 
-    /// (Broadcast mode) One non-zero exit code will stop Pegasus
+    /// (Broadcast mode) Don't abort Pegasus even if a command fails
     #[clap(long, short)]
-    pub error_aborts: bool,
+    pub ignore_errors: bool,
 
     /// (Lock mode) Which editor to use to open the queue file
     #[clap(long)]

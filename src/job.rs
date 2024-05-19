@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::fs::OpenOptions;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -53,6 +54,24 @@ impl Cmd {
                     &self.command, &self.params, e
                 )
             })
+    }
+}
+
+pub struct FailedCmd {
+    host: String,
+    cmd: String,
+    error: String,
+}
+
+impl FailedCmd {
+    pub fn new(host: String, cmd: String, error: String) -> Self {
+        Self { host, cmd, error }
+    }
+}
+
+impl Debug for FailedCmd {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {} ({})", self.host, self.cmd, self.error)
     }
 }
 

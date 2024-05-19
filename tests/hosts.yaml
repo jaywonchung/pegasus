@@ -2,8 +2,8 @@
     - localhost
     - localhost
   laziness:
-    - 5
+    - 3
 - hostname:
     - localhost
   laziness:
-    - 10
+    - 5

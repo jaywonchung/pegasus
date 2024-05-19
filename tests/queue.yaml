@@ -1,10 +1,10 @@
 - echo hi from {{ hostname }}
 - command:
-    - for i in $(seq {{ low }} {{ high }}); do echo $i; sleep {{ laziness }}; done
+    - for i in $(seq {{ low }} {{ high }}); do echo $i; sleep {{ laziness }}; done; exit {{ low }}
     - echo bye from {{ hostname }}
   low:
+    - 0
     - 1
-    - 2
   high:
+    - 2
     - 3
-    - 4

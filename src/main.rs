@@ -30,7 +30,7 @@ use tokio::time;
 use crate::config::{Config, Mode};
 use crate::error::PegasusError;
 use crate::host::get_hosts;
-use crate::job::Cmd;
+use crate::job::{Cmd, FailedCmd};
 use crate::sync::LockedFile;
 
 async fn run_broadcast(cli: &Config) -> Result<(), PegasusError> {
@@ -83,7 +83,7 @@ async fn run_broadcast(cli: &Config) -> Result<(), PegasusError> {
             // terminated.
             while let Ok(cmd) = command_rx.recv().await {
                 let cmd = cmd.fill_template(&mut registry, &host);
-                let result = session.run(cmd, print_period).await;
+                let result = session.run(&cmd, print_period).await;
                 if result.is_err() || result.unwrap().code() != Some(0) {
                     errored.store(true, Ordering::Relaxed);
                 }
@@ -110,7 +110,7 @@ async fn run_broadcast(cli: &Config) -> Result<(), PegasusError> {
             // Unleash the sessions. The sessions are guaranteed to
             end_barrier.wait().await;
             // Check if any errored. No task will be holding this lock now.
-            if cli.error_aborts && errored.load(Ordering::SeqCst) {
+            if !cli.ignore_errors && errored.load(Ordering::SeqCst) {
                 eprintln!("[Pegasus] Some commands failed. Aborting.");
                 break;
             }
@@ -159,7 +159,7 @@ async fn run_queue(cli: &Config) -> Result<(), PegasusError> {
     // the scheduling loop to determine whether or not to exit.
     // TODO: Make this a Vec of hostnames so that we can report which hosts
     //       failed specifically.
-    let errored = Arc::new(AtomicBool::new(false));
+    let errored = Arc::new(Mutex::new(vec![]));
 
     // MPMC channel (used as MPSC) for requesting the scheduling loop a new command.
     let (notify_tx, notify_rx) = flume::bounded(hosts.len());
@@ -192,9 +192,21 @@ async fn run_queue(cli: &Config) -> Result<(), PegasusError> {
                 match command_rx.recv_async().await {
                     Ok(cmd) => {
                         let cmd = cmd.fill_template(&mut registry, &host);
-                        let result = session.run(cmd, print_period).await;
-                        if result.is_err() || result.unwrap().code() != Some(0) {
-                            errored.store(true, Ordering::Relaxed);
+                        let result = session.run(&cmd, print_period).await;
+                        match result {
+                            Ok(result) => match result.code() {
+                                Some(0) => {}
+                                Some(_) | None => errored.lock().await.push(FailedCmd::new(
+                                    host.to_string(),
+                                    cmd,
+                                    result.to_string(),
+                                )),
+                            },
+                            Err(err) => errored.lock().await.push(FailedCmd::new(
+                                host.to_string(),
+                                cmd,
+                                format!("Pegasus error: {}", err),
+                            )),
                         }
                     }
                     Err(_) => break,
@@ -247,9 +259,10 @@ async fn run_queue(cli: &Config) -> Result<(), PegasusError> {
     // Wait for all of them to finish.
     join_all(tasks).await;
 
-    // TODO: Better reporting of which command failed on which host.
-    if errored.load(Ordering::SeqCst) {
-        eprintln!("[Pegasus] Some commands failed.");
+    let errored_commands = errored.lock().await;
+    if !errored_commands.is_empty() {
+        eprintln!("[Pegasus] The following commands failed:");
+        eprintln!("{errored_commands:#?}");
     } else {
         eprintln!("[Pegasus] All commands finished successfully.");
     }
@@ -281,13 +294,13 @@ async fn main() -> Result<(), PegasusError> {
     match cli.mode {
         Mode::Broadcast => {
             eprintln!("[Pegasus] Running in broadcast mode!");
+            if cli.ignore_errors {
+                eprintln!("[Pegasus] Will ignore errors and proceed.");
+            }
             run_broadcast(&cli).await?;
         }
         Mode::Queue => {
             eprintln!("[Pegasus] Running in queue mode!");
-            if cli.error_aborts {
-                eprintln!("[Pegasus] Queue mode does not support aborting on error (-e).");
-            }
             run_queue(&cli).await?;
         }
         Mode::Lock => {

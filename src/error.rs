@@ -2,8 +2,8 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum PegasusError {
-    #[error("failed to connect SSH session or execute SSH command")]
+    #[error("Failed to connect SSH session or execute SSH command: {0}")]
     SshError(#[from] openssh::Error),
-    #[error("failed to execute local command")]
+    #[error("Failed to execute local command: {0}")]
     LocalCommandError(#[from] std::io::Error),
 }
