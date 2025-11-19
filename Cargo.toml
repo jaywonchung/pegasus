@@ -25,11 +25,13 @@ itertools = "0.10.3"
 clap = { version = "3.0.13", features = ["derive"] }
 handlebars = "4"
 handlebars_misc_helpers = { version = "0.13.0", features = ["string", "json"] }
-colored = "2"
+colored = "3.0.0"
 colourado = "0.2.0"
 memchr = "2.4.1"
 thiserror = "1.0.50"
 async-trait = "0.1.74"
+terminal_size = "0.4"
+unicode-width = "0.2"
 
 [profile.release]
 panic = "abort"

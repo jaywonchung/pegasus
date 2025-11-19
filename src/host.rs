@@ -67,9 +67,9 @@ impl Host {
     /// For pretty-printing the host name.
     /// Surrounds with brackets and colors it with a random color.
     pub fn prettify(&self, color: Color) -> ColoredString {
-        let r = (color.red * 256.0) as u8;
-        let g = (color.green * 256.0) as u8;
-        let b = (color.blue * 256.0) as u8;
+        let r = (color.red * 255.0) as u8;
+        let g = (color.green * 255.0) as u8;
+        let b = (color.blue * 255.0) as u8;
         format!("{}", self).truecolor(r, g, b)
     }
 }
