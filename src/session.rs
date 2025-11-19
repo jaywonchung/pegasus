@@ -11,6 +11,20 @@ use tokio::process::Command;
 
 use crate::error::PegasusError;
 
+/// Wraps a command with a parent process monitor that kills the job if SSH dies.
+/// Based on GNU Parallel's approach: monitor parent PID and kill child if parent changes.
+fn parent_monitor_wrapper(cmd: &str) -> String {
+    // Escape single quotes: ' becomes '\''
+    let escaped_cmd = cmd.replace('\'', r"'\''");
+
+    // Wrapper monitors parent PID and kills child if parent dies
+    // Uses process groups (-$_c) to kill entire job tree
+    format!(
+        r#"_p=$PPID; (setsid sh -c '{}') & _c=$!; while kill -0 $_c 2>/dev/null; do _n=$(ps -o ppid= -p $$ 2>/dev/null | tr -d ' '); if [ -n "$_n" ] && [ "$_n" != "$_p" ]; then kill -TERM -$_c 2>/dev/null; sleep 0.2; kill -KILL -$_c 2>/dev/null; exit 143; fi; sleep 0.1; done; wait $_c"#,
+        escaped_cmd
+    )
+}
+
 #[async_trait]
 pub trait Session {
     /// Runs a job with the session.
@@ -32,8 +46,10 @@ impl RemoteSession {
 impl Session for RemoteSession {
     async fn run(&self, job: &str, print_period: usize) -> Result<ExitStatus, PegasusError> {
         println!("{} === run '{}' ===", self.colorhost, job);
+        // Wrap command with parent monitor to kill job if SSH dies
+        let wrapped_job = parent_monitor_wrapper(job);
         let mut cmd = self.session.command("sh");
-        let mut process = cmd.arg("-c").raw_arg(format!("'{}'", job));
+        let mut process = cmd.arg("-c").arg(&wrapped_job);
         if print_period == 0 {
             process = process
                 .stdout(openssh::Stdio::null())

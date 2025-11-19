@@ -33,6 +33,60 @@ use crate::host::get_hosts;
 use crate::job::{Cmd, FailedCmd};
 use crate::sync::LockedFile;
 
+/// Cleanup SSH control sockets and abort tasks on cancellation.
+///
+/// This function:
+/// 1. Finds and kills SSH control master processes (so remote wrapper detects SSH death)
+/// 2. Waits for remote jobs to be cleaned up by the wrapper
+/// 3. Aborts any remaining tasks still waiting on SSH
+async fn cleanup_cancelled_tasks(tasks: &[tokio::task::JoinHandle<()>]) {
+    // Kill SSH control socket processes FIRST, so remote wrapper detects SSH death
+    if let Ok(cwd) = std::env::current_dir() {
+        if let Ok(entries) = std::fs::read_dir(&cwd) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir()
+                    && path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|s| s.starts_with(".ssh-connection"))
+                        .unwrap_or(false)
+                {
+                    // Found a control socket directory - get its name to search for SSH processes
+                    if let Some(socket_id) = path.file_name().and_then(|n| n.to_str()) {
+                        // Use pgrep to find SSH processes by command line (socket path)
+                        // -u $USER ensures we only match our own processes
+                        let username = std::env::var("USER").unwrap_or_else(|_| "".to_string());
+                        if let Ok(output) = std::process::Command::new("pgrep")
+                            .args(["-u", &username, "-f", socket_id])
+                            .output()
+                        {
+                            if let Ok(pids) = String::from_utf8(output.stdout) {
+                                for pid in pids.lines() {
+                                    if let Ok(pid_num) = pid.trim().parse::<i32>() {
+                                        // Kill the SSH process with SIGTERM
+                                        let _ = std::process::Command::new("kill")
+                                            .args(["-TERM", &pid_num.to_string()])
+                                            .output();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Wait for SSH to die and remote wrapper to kill jobs
+    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+
+    // Now abort tasks that are still waiting on dead SSH connections
+    for task in tasks {
+        task.abort();
+    }
+}
+
 async fn run_broadcast(cli: &Config) -> Result<(), PegasusError> {
     let hosts = get_hosts(&cli.hosts_file);
     let num_hosts = hosts.len();
@@ -107,8 +161,24 @@ async fn run_broadcast(cli: &Config) -> Result<(), PegasusError> {
         if let Some(cmd) = job_queue.next().await {
             // Broadcast command to all sessions and wait for all to finish.
             command_tx.send(cmd).expect("command_tx");
-            // Unleash the sessions. The sessions are guaranteed to
-            end_barrier.wait().await;
+            // Wait for barrier or cancellation
+            tokio::select! {
+                _ = end_barrier.wait() => {
+                    // Jobs completed
+                }
+                _ = async {
+                    loop {
+                        if *cancelled.lock().await {
+                            break;
+                        }
+                        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                    }
+                } => {
+                    // Cancelled
+                    eprintln!("[Pegasus] Ctrl-c detected. Stopping scheduling loop...");
+                    break;
+                }
+            }
             // Check if any errored. No task will be holding this lock now.
             if !cli.ignore_errors && errored.load(Ordering::SeqCst) {
                 eprintln!("[Pegasus] Some commands failed. Aborting.");
@@ -127,13 +197,23 @@ async fn run_broadcast(cli: &Config) -> Result<(), PegasusError> {
     drop(command_tx);
 
     // Wait for all session tasks to finish cleanup.
-    join_all(tasks).await;
+    if *cancelled.lock().await {
+        cleanup_cancelled_tasks(&tasks).await;
+    } else {
+        join_all(tasks).await;
+    }
 
     // TODO: Better reporting of which command failed on which host.
-    if errored.load(Ordering::SeqCst) {
-        eprintln!("[Pegasus] Some commands failed.");
+    if *cancelled.lock().await {
+        // Cancelled - don't report errors from cancellation
+        eprintln!("[Pegasus] Cancelled successfully. All remote jobs cleaned up.");
     } else {
-        eprintln!("[Pegasus] All commands finished successfully.");
+        // Normal termination - report actual failures
+        if errored.load(Ordering::SeqCst) {
+            eprintln!("[Pegasus] Some commands failed.");
+        } else {
+            eprintln!("[Pegasus] All commands finished successfully.");
+        }
     }
 
     Ok(())
@@ -222,12 +302,22 @@ async fn run_queue(cli: &Config) -> Result<(), PegasusError> {
     loop {
         // `recv_async` will allow the scheduler to react to a new free session
         // immediately. However, the received `host_index` must be consumed in
-        // some way.
-        host_index = notify_rx.recv_async().await.expect("notify_rx");
-        // Check cancel.
-        if *cancelled.lock().await {
-            eprintln!("[Pegasus] Ctrl-c detected. Stopping scheduling loop...");
-            break;
+        // some way. Use select to also check for cancellation.
+        tokio::select! {
+            result = notify_rx.recv_async() => {
+                host_index = result.expect("notify_rx");
+            }
+            _ = async {
+                loop {
+                    if *cancelled.lock().await {
+                        break;
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                }
+            } => {
+                eprintln!("[Pegasus] Ctrl-c detected. Stopping scheduling loop...");
+                break;
+            }
         }
         if let Some(cmd) = job_queue.next().await {
             // Next command available.
@@ -257,14 +347,31 @@ async fn run_queue(cli: &Config) -> Result<(), PegasusError> {
 
     // The scheduling loop has terminated, but there should be commands still running.
     // Wait for all of them to finish.
-    join_all(tasks).await;
+    if *cancelled.lock().await {
+        cleanup_cancelled_tasks(&tasks).await;
+    } else {
+        join_all(tasks).await;
+    }
 
     let errored_commands = errored.lock().await;
-    if !errored_commands.is_empty() {
-        eprintln!("[Pegasus] The following commands failed:");
-        eprintln!("{errored_commands:#?}");
+    if *cancelled.lock().await {
+        // Cancelled - don't report errors from cancellation
+        if errored_commands.is_empty() {
+            eprintln!("[Pegasus] Cancelled successfully. All remote jobs cleaned up.");
+        } else {
+            eprintln!(
+                "[Pegasus] Cancelled. {} command(s) were interrupted.",
+                errored_commands.len()
+            );
+        }
     } else {
-        eprintln!("[Pegasus] All commands finished successfully.");
+        // Normal termination - report actual failures
+        if !errored_commands.is_empty() {
+            eprintln!("[Pegasus] The following commands failed:");
+            eprintln!("{errored_commands:#?}");
+        } else {
+            eprintln!("[Pegasus] All commands finished successfully.");
+        }
     }
 
     Ok(())
