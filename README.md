@@ -234,7 +234,11 @@ There is also a `-e` or `--error-aborts` flag in Broadcast Mode, which aborts Pe
 
 ### Cancelling and killing
 
-It is very difficult to find a generic way to cancel commands that started running via SSH (See [#11](https://github.com/jaywonchung/pegasus/issues/11)).
+For the special case when you are running jobs on `localhost`, a Ctrl-c will be propagated to all running jobs and also stop Pegasus itself.
+
+However, it is very difficult to find a generic way to cancel commands that started running via SSH (See also [#11](https://github.com/jaywonchung/pegasus/issues/11)).
 Therefore, the caveat of Pegasus at the moment is that it works very well when things go well, but it's difficult to cancel and kill when things go not quite as planned.
 You need to walk into every node and manually kill commands.
 That said, you can still use Broadcast mode to automate that.
+
+A work-in-progress idea in the `jw-remote-cancel` branch is to wrap the command in a shell script that checks the parent PID of the process, and if it becomes 1, it means that the SSH session was killed, and the command needs to be killed as well.
