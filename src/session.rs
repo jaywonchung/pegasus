@@ -1,6 +1,7 @@
 use std::fmt::Display;
 use std::io::Write;
 use std::process::ExitStatus;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use async_trait::async_trait;
 use colored::ColoredString;
@@ -11,6 +12,34 @@ use tokio::process::Command;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::error::PegasusError;
+
+static TERMINAL_WIDTH: AtomicUsize = AtomicUsize::new(120);
+
+fn get_terminal_width() -> usize {
+    TERMINAL_WIDTH.load(Ordering::Relaxed)
+}
+
+fn update_terminal_width() {
+    let width = terminal_size::terminal_size()
+        .map(|(terminal_size::Width(w), _)| w as usize)
+        .unwrap_or(120);
+    TERMINAL_WIDTH.store(width, Ordering::Relaxed);
+}
+
+pub fn spawn_terminal_width_handler() {
+    update_terminal_width();
+
+    tokio::spawn(async {
+        let mut signal =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::window_change())
+                .expect("Failed to register SIGWINCH handler");
+
+        loop {
+            signal.recv().await;
+            update_terminal_width();
+        }
+    });
+}
 
 #[async_trait]
 pub trait Session {
@@ -120,25 +149,30 @@ impl Session for LocalSession {
 }
 
 async fn stream<B: AsyncRead + Unpin, D: Display>(prefix: D, stream: B, print_period: usize) {
-    // Get terminal width, use 120 as conservative default
-    let term_width = terminal_size::terminal_size()
-        .map(|(terminal_size::Width(w), _)| w as usize)
-        .unwrap_or(120);
-
     // Format prefix with space
     let prefix_str = format!("{} ", prefix);
 
     // Calculate visual width of prefix (excluding ANSI codes)
     let prefix_display_width = strip_ansi_codes(&prefix_str).width();
 
-    // Maximum content length per line (leave some margin to avoid edge cases)
-    let max_content_len = term_width
+    // Cache terminal width and derived max_content_len
+    let mut cached_term_width = get_terminal_width();
+    let mut max_content_len = cached_term_width
         .saturating_sub(prefix_display_width)
         .saturating_sub(1);
 
     let mut reader = BufReader::new(stream);
     let mut buf = Vec::with_capacity(reader.buffer().len());
     loop {
+        // Check if terminal width changed. The branch predictor will learn
+        // the most common "unchanged" path and make the if pretty much free.
+        let term_width = get_terminal_width();
+        if term_width != cached_term_width {
+            cached_term_width = term_width;
+            max_content_len = term_width
+                .saturating_sub(prefix_display_width)
+                .saturating_sub(1);
+        }
         // Read into the buffer until either \r or \n is met.
         // Skip the first `print_period-1` occurances.
         read_until2(&mut reader, b'\r', b'\n', &mut buf, print_period)

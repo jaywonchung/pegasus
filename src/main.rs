@@ -297,10 +297,12 @@ async fn main() -> Result<(), PegasusError> {
             if cli.ignore_errors {
                 eprintln!("[Pegasus] Will ignore errors and proceed.");
             }
+            session::spawn_terminal_width_handler();
             run_broadcast(&cli).await?;
         }
         Mode::Queue => {
             eprintln!("[Pegasus] Running in queue mode!");
+            session::spawn_terminal_width_handler();
             run_queue(&cli).await?;
         }
         Mode::Lock => {
