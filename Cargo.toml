@@ -3,7 +3,7 @@ name = "pegasus-ssh"
 description = "Pegasus: A Multi-Node SSH Command Runner"
 authors = ["Jae-Won Chung <jaewon.chung.cs@gmail.com>"]
 version = "1.4.0"
-edition = "2021"
+edition = "2024"
 repository = "https://github.com/jaywonchung/pegasus"
 license = "MIT"
 keywords = ["cli", "ssh"]
@@ -14,24 +14,29 @@ name = "pegasus"
 path = "src/main.rs"
 
 [dependencies]
-openssh = { version = "0.9.9", features = ["native-mux"], default-features = false }
+pest = "2.8"
+pest_derive = "2.8"
+openssh = { version = "0.11", features = ["native-mux"], default-features = false }
 tokio = { version = "1", features = ["rt", "macros", "io-util", "time", "sync", "rt-multi-thread", "parking_lot", "signal"] }
 futures = "0.3"
-flume = { version = "0.10.10", features = ["async"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_yaml = "0.8"
+flume = { version = "0.11", features = ["async"] }
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
 void = "1"
-itertools = "0.10.3"
-clap = { version = "3.0.13", features = ["derive"] }
-handlebars = "4"
-handlebars_misc_helpers = { version = "0.13.0", features = ["string", "json"] }
-colored = "3.0.0"
-colourado = "0.2.0"
-memchr = "2.4.1"
-thiserror = "1.0.50"
-async-trait = "0.1.74"
+itertools = "0.14"
+clap = { version = "4", features = ["derive"] }
+handlebars = "5"
+handlebars_misc_helpers = { version = "0.16", features = ["string", "json"] }
+colored = "3"
+colourado = "0.2"
+memchr = "2"
+thiserror = "2"
+async-trait = "0.1"
 terminal_size = "0.4"
 unicode-width = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
 
 [profile.release]
 panic = "abort"

@@ -1,0 +1,21 @@
+# GPU cluster for multi-GPU training with host parameters.
+# Combines slots (for resource allocation) with parameters (for customization).
+
+# DGX nodes with 8 GPUs each
+- hostname:
+    - dgx-01
+    - dgx-02
+  slots:
+    - 8
+  node_type:
+    - dgx
+
+# Cloud GPU instances with 4 GPUs each
+- hostname:
+    - cloud-gpu-01
+    - cloud-gpu-02
+    - cloud-gpu-03
+  slots:
+    - 4
+  node_type:
+    - cloud

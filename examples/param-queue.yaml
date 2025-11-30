@@ -1,0 +1,8 @@
+# Jobs using host parameters.
+# {{gpu_id}} comes from the host's parameters.
+
+# Run on each GPU of the gpu-server
+- CUDA_VISIBLE_DEVICES={{gpu_id}} python benchmark.py --device cuda
+
+# Deploy to production servers
+- docker compose -f docker-compose.{{env}}.yml up -d

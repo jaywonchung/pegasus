@@ -4,6 +4,14 @@
 //! multiple concurrent jobs on a single host when sufficient slots are available.
 
 use std::collections::HashSet;
+use std::sync::Arc;
+
+use handlebars::Handlebars;
+use tokio::sync::Mutex;
+
+use crate::host::Host;
+use crate::job::{Cmd, FailedCmd};
+use crate::session::Session;
 
 /// Tracks slot allocation for a single host.
 ///
@@ -128,6 +136,62 @@ pub fn find_host_for_job(
     None
 }
 
+/// Spawns an async task to execute a job on a host.
+#[allow(clippy::too_many_arguments)]
+pub fn spawn_job(
+    session: Arc<Box<dyn Session + Send + Sync>>,
+    host: Host,
+    mut cmd: Cmd,
+    allocated_slots: Vec<usize>,
+    completion_tx: flume::Sender<JobCompletion>,
+    host_index: usize,
+    print_period: usize,
+    errored: Arc<Mutex<Vec<FailedCmd>>>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        // Inject {{slots}} template variable with allocated slot indices.
+        let slots_str = allocated_slots
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        cmd.insert_param("slots".to_string(), slots_str);
+
+        // Fill template and run command.
+        let mut registry = Handlebars::new();
+        handlebars_misc_helpers::register(&mut registry);
+        let filled_cmd = cmd.fill_template(&mut registry, &host);
+
+        let result = session.run(&filled_cmd, print_period).await;
+
+        // Record errors.
+        match result {
+            Ok(status) => {
+                if status.code() != Some(0) {
+                    errored.lock().await.push(FailedCmd::new(
+                        host.to_string(),
+                        filled_cmd,
+                        status.to_string(),
+                    ));
+                }
+            }
+            Err(err) => {
+                errored.lock().await.push(FailedCmd::new(
+                    host.to_string(),
+                    filled_cmd,
+                    format!("Pegasus error: {}", err),
+                ));
+            }
+        }
+
+        // Notify scheduler that slots are released.
+        let _ = completion_tx.send(JobCompletion {
+            host_index,
+            released_slots: allocated_slots,
+        });
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -189,8 +253,8 @@ mod tests {
         let mut state = HostSlotState::new(4);
         state.allocate(1); // occupies slot 0
         state.occupied_slots.insert(2); // also occupy slot 2
-                                        // Free: 1, 3. No even-aligned contiguous block of 2.
-                                        // No contiguous block at all. Falls back to non-contiguous: 1, 3.
+        // Free: 1, 3. No even-aligned contiguous block of 2.
+        // No contiguous block at all. Falls back to non-contiguous: 1, 3.
         let slots = state.allocate(2).unwrap();
         assert_eq!(slots, vec![1, 3]);
     }
@@ -199,7 +263,7 @@ mod tests {
     fn test_allocate_prefers_even_over_odd_contiguous() {
         let mut state = HostSlotState::new(4);
         state.allocate(1); // occupies slot 0
-                           // Free: 1,2,3. Even-aligned at 2: slots 2,3 available. Should prefer that.
+        // Free: 1,2,3. Even-aligned at 2: slots 2,3 available. Should prefer that.
         let slots = state.allocate(2).unwrap();
         assert_eq!(slots, vec![2, 3]);
     }

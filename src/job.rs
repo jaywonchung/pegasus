@@ -14,7 +14,6 @@ use void::Void;
 use crate::host::Host;
 use crate::serde::string_or_mapping;
 use crate::sync::LockedFile;
-use crate::writer::StripPrefixWriter;
 
 #[derive(Debug, Clone)]
 pub struct Cmd {
@@ -33,6 +32,11 @@ impl Cmd {
             params: HashMap::new(),
             slots_required: 1,
         }
+    }
+
+    /// Test-only constructor that's public.
+    pub fn new_for_test(command: String) -> Self {
+        Self::new(command)
     }
 
     fn into_map(mut self) -> HashMap<String, Vec<String>> {
@@ -159,7 +163,7 @@ impl JobQueue {
                 let job_spec = job_specs.remove(0);
 
                 // Job spec must contain the key "command".
-                if !job_spec.0 .0.contains_key("command") {
+                if !job_spec.0.0.contains_key("command") {
                     eprintln!("[Pegasus] Job at the head of the queue has no 'command' key.");
                     eprintln!("[Pegasus] Wait 5 seconds for fix...");
                     time::sleep(time::Duration::from_secs(5)).await;
@@ -203,8 +207,7 @@ impl JobQueue {
                 job_specs = [remaining, job_specs].concat();
 
                 // Job spec looks good. Remove it from the queue file.
-                // Strip the YAML metadata separator "---\n".
-                let writer = StripPrefixWriter::new(queue_file.write_handle(), 4);
+                let writer = queue_file.write_handle();
                 serde_yaml::to_writer(writer, &job_specs).expect("Failed to update the queue file");
 
                 // Move the job to consumed.yaml.
@@ -213,10 +216,8 @@ impl JobQueue {
                     .append(true)
                     .open("consumed.yaml")
                     .expect("Failed to open consumed.yaml.");
-                // Strip the YAML metadata separator "---\n".
-                let writer = StripPrefixWriter::new(write_handle, 4);
                 serde_yaml::to_writer(
-                    writer,
+                    write_handle,
                     &vec![JobSpec(JobSpecInner(next_command.clone().into_map()))],
                 )
                 .expect("Failed to update consumed.yaml");

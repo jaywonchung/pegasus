@@ -133,7 +133,7 @@ pub fn get_hosts(hosts_file: &str) -> Vec<Host> {
     // should have the key 'hostname'.
     if !host_specs
         .iter()
-        .all(|spec| spec.0 .0.contains_key("hostname"))
+        .all(|spec| spec.0.0.contains_key("hostname"))
     {
         panic!(
             "A parametrized entry in {} is missing the 'hostname' key.",

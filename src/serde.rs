@@ -2,7 +2,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::str::FromStr;
 
-use serde::de::{self, value::MapAccessDeserializer, MapAccess, Visitor};
+use serde::de::{self, MapAccess, Visitor, value::MapAccessDeserializer};
 use serde::{Deserialize, Deserializer};
 use void::Void;
 

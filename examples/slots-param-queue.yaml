@@ -1,0 +1,58 @@
+# Multi-GPU jobs with parametrization.
+# {{slots}} = allocated GPU indices (from scheduler)
+# {{model}}, {{dataset}} = job parameters (from this file)
+# {{hostname}}, {{node_type}} = host parameters (from hosts file)
+
+# 8-GPU distributed training sweep (only runs on DGX nodes)
+- command:
+    - |
+      CUDA_VISIBLE_DEVICES={{slots}} \
+      torchrun --nproc_per_node=8 train.py \
+        --model {{model}} \
+        --dataset {{dataset}} \
+        --output /results/{{hostname}}/{{model}}_{{dataset}}
+  slots:
+    - 8
+  model:
+    - gpt2-xl
+    - llama-7b
+  dataset:
+    - wikitext
+    - c4
+
+# 4-GPU training jobs (run on any node with 4+ GPUs)
+- command:
+    - |
+      CUDA_VISIBLE_DEVICES={{slots}} \
+      torchrun --nproc_per_node=4 train.py \
+        --model {{model}} \
+        --lr {{lr}} \
+        --node-type {{node_type}}
+  slots:
+    - 4
+  model:
+    - gpt2-medium
+    - gpt2-large
+  lr:
+    - 1e-4
+    - 5e-5
+
+# 2-GPU jobs for smaller experiments (NVLink-aware allocation)
+- command:
+    - CUDA_VISIBLE_DEVICES={{slots}} python finetune.py --model {{model}} --task {{task}}
+  slots:
+    - 2
+  model:
+    - bert-base
+    - roberta-base
+  task:
+    - sst2
+    - mnli
+    - qqp
+
+# Single-GPU evaluation jobs
+- command:
+    - CUDA_VISIBLE_DEVICES={{slots}} python evaluate.py --checkpoint {{ckpt}}
+  ckpt:
+    - checkpoints/model_best.pt
+    - checkpoints/model_final.pt

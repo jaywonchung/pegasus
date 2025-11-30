@@ -1,7 +1,0 @@
-# Example: Simulated 8-GPU node using localhost.
-# Use this to test slot-based scheduling locally.
-
-- hostname:
-    - localhost
-  slots:
-    - 8

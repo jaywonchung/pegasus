@@ -1,41 +1,18 @@
-// Serde helper module.
-mod serde;
-// Command line arguments and configuration.
-mod config;
-// How to parse and represent hosts.
-mod host;
-// How to parse and represent jobs.
-mod job;
-// Resource-aware scheduling.
-mod scheduler;
-// Synchronization primitives.
-mod sync;
-// SSH session wrapper.
-mod session;
-// Provides utility for std::io::Writer
-mod writer;
-// Error handling.
-mod error;
-
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use clap::Parser;
 use colourado::{ColorPalette, PaletteType};
 use futures::future::join_all;
 use handlebars::Handlebars;
-use itertools::zip;
-use job::JobQueue;
-use tokio::sync::{broadcast, Barrier, Mutex};
+use std::iter::zip;
+use tokio::sync::{Barrier, Mutex, broadcast};
 use tokio::time;
 
-use crate::config::{Config, Mode};
-use crate::error::PegasusError;
-use crate::host::{get_hosts, Host};
-use crate::job::{Cmd, FailedCmd};
-use crate::scheduler::{find_host_for_job, HostSlotState, JobCompletion};
-use crate::session::Session;
-use crate::sync::LockedFile;
+use pegasus_ssh::{
+    Cmd, Config, Host, HostSlotState, JobCompletion, JobQueue, LockedFile, Mode, PegasusError,
+    Session, find_host_for_job, get_hosts, spawn_job,
+};
 
 async fn run_broadcast(cli: &Config) -> Result<(), PegasusError> {
     let hosts = get_hosts(&cli.hosts_file);
@@ -185,7 +162,6 @@ async fn run_queue(cli: &Config) -> Result<(), PegasusError> {
 
     // The scheduling loop that fetches jobs from the job queue and schedules
     // them on hosts with sufficient slots.
-    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
     let mut job_queue = JobQueue::new(&cli.queue_file, Arc::clone(&cancelled));
     let mut pending_cmd: Option<Cmd> = None;
 
@@ -284,62 +260,6 @@ async fn run_queue(cli: &Config) -> Result<(), PegasusError> {
     Ok(())
 }
 
-/// Spawns an async task to execute a job on a host.
-#[allow(clippy::too_many_arguments)]
-fn spawn_job(
-    session: Arc<Box<dyn Session + Send + Sync>>,
-    host: Host,
-    mut cmd: Cmd,
-    allocated_slots: Vec<usize>,
-    completion_tx: flume::Sender<JobCompletion>,
-    host_index: usize,
-    print_period: usize,
-    errored: Arc<Mutex<Vec<FailedCmd>>>,
-) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        // Inject {{slots}} template variable with allocated slot indices.
-        let slots_str = allocated_slots
-            .iter()
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>()
-            .join(",");
-        cmd.insert_param("slots".to_string(), slots_str);
-
-        // Fill template and run command.
-        let mut registry = Handlebars::new();
-        handlebars_misc_helpers::register(&mut registry);
-        let filled_cmd = cmd.fill_template(&mut registry, &host);
-
-        let result = session.run(&filled_cmd, print_period).await;
-
-        // Record errors.
-        match result {
-            Ok(status) => {
-                if status.code() != Some(0) {
-                    errored.lock().await.push(FailedCmd::new(
-                        host.to_string(),
-                        filled_cmd,
-                        status.to_string(),
-                    ));
-                }
-            }
-            Err(err) => {
-                errored.lock().await.push(FailedCmd::new(
-                    host.to_string(),
-                    filled_cmd,
-                    format!("Pegasus error: {}", err),
-                ));
-            }
-        }
-
-        // Notify scheduler that slots are released.
-        let _ = completion_tx.send(JobCompletion {
-            host_index,
-            released_slots: allocated_slots,
-        });
-    })
-}
-
 async fn run_lock(cli: &Config) {
     let editor = match &cli.editor {
         Some(editor) => editor.into(),
@@ -367,12 +287,12 @@ async fn main() -> Result<(), PegasusError> {
             if cli.ignore_errors {
                 eprintln!("[Pegasus] Will ignore errors and proceed.");
             }
-            session::spawn_terminal_width_handler();
+            pegasus_ssh::session::spawn_terminal_width_handler();
             run_broadcast(&cli).await?;
         }
         Mode::Queue => {
             eprintln!("[Pegasus] Running in queue mode!");
-            session::spawn_terminal_width_handler();
+            pegasus_ssh::session::spawn_terminal_width_handler();
             run_queue(&cli).await?;
         }
         Mode::Lock => {

@@ -1,0 +1,7 @@
+# Simple job queue.
+# Jobs are distributed across available hosts, one per host.
+
+- python train.py --dataset mnist --epochs 10
+- python train.py --dataset cifar10 --epochs 20
+- python train.py --dataset imagenet --epochs 5
+- python evaluate.py --model checkpoint.pt

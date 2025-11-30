@@ -1,0 +1,33 @@
+# Terraforming commands - run on all nodes to set them up.
+# These run sequentially (one command completes on all hosts before the next starts).
+
+# Update package lists
+- sudo apt-get update
+
+# Install common dependencies
+- sudo apt-get install -y build-essential git curl wget htop tmux
+
+# Install Docker
+- curl -fsSL https://get.docker.com | sudo sh
+
+# Add user to docker group
+- sudo usermod -aG docker $USER
+
+# Install NVIDIA container toolkit
+- |
+  distribution=$(. /etc/os-release;echo $ID$VERSION_ID) &&
+  curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add - &&
+  curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list &&
+  sudo apt-get update &&
+  sudo apt-get install -y nvidia-container-toolkit
+
+# Configure Docker to use NVIDIA runtime
+- |
+  sudo nvidia-ctk runtime configure --runtime=docker &&
+  sudo systemctl restart docker
+
+# Clone project repository
+- git clone https://github.com/myorg/myproject.git ~/myproject
+
+# Pull base Docker image
+- docker pull pytorch/pytorch:2.1.0-cuda12.1-cudnn8-devel
