@@ -1,0 +1,40 @@
+# Example: Realistic CUDA training jobs with CUDA_VISIBLE_DEVICES.
+# The {{slots}} variable contains comma-separated GPU indices (e.g., "0,1,2,3").
+
+# Large model training: needs 8 GPUs
+- command:
+    - CUDA_VISIBLE_DEVICES={{slots}} echo "Training large model on {{hostname}} GPUs {{slots}}"; sleep 2
+  slots:
+    - 8
+
+# Medium model training: needs 4 GPUs
+- command:
+    - CUDA_VISIBLE_DEVICES={{slots}} echo "Training {{model}} on {{hostname}} GPUs {{slots}}"; sleep 1
+  model:
+    - llama-7b
+    - mistral-7b
+  slots:
+    - 4
+
+# Small model training: needs 2 GPUs (NVLink pairs preferred)
+- command:
+    - CUDA_VISIBLE_DEVICES={{slots}} echo "Training {{model}} on {{hostname}} GPUs {{slots}}"; sleep 0.5
+  model:
+    - bert-base
+    - roberta
+    - distilbert
+  slots:
+    - 2
+
+# Single GPU inference jobs
+- command:
+    - CUDA_VISIBLE_DEVICES={{slots}} echo "Inference batch {{batch}} on {{hostname}} GPU {{slots}}"; sleep 0.2
+  batch:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 5
+    - 6
+  slots:
+    - 1

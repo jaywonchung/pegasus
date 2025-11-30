@@ -6,6 +6,8 @@ mod config;
 mod host;
 // How to parse and represent jobs.
 mod job;
+// Resource-aware scheduling.
+mod scheduler;
 // Synchronization primitives.
 mod sync;
 // SSH session wrapper.
@@ -29,8 +31,10 @@ use tokio::time;
 
 use crate::config::{Config, Mode};
 use crate::error::PegasusError;
-use crate::host::get_hosts;
+use crate::host::{get_hosts, Host};
 use crate::job::{Cmd, FailedCmd};
+use crate::scheduler::{find_host_for_job, HostSlotState, JobCompletion};
+use crate::session::Session;
 use crate::sync::LockedFile;
 
 async fn run_broadcast(cli: &Config) -> Result<(), PegasusError> {
@@ -155,109 +159,119 @@ async fn run_queue(cli: &Config) -> Result<(), PegasusError> {
         *cancelled_handler.lock().await = true;
     });
 
-    // An atomic variable set whenever a session errors. Later read by
-    // the scheduling loop to determine whether or not to exit.
-    // TODO: Make this a Vec of hostnames so that we can report which hosts
-    //       failed specifically.
+    // Track errors from job executions.
     let errored = Arc::new(Mutex::new(vec![]));
 
-    // MPMC channel (used as MPSC) for requesting the scheduling loop a new command.
-    let (notify_tx, notify_rx) = flume::bounded(hosts.len());
+    // Initialize slot state for each host.
+    let mut slot_states: Vec<HostSlotState> =
+        hosts.iter().map(|h| HostSlotState::new(h.slots)).collect();
+    let max_host_slots = hosts.iter().map(|h| h.slots).max().unwrap_or(0);
 
-    let mut tasks = Vec::with_capacity(num_hosts);
-    let mut command_txs = Vec::with_capacity(num_hosts);
+    // Channel for job completion notifications.
+    let (completion_tx, completion_rx) = flume::unbounded::<JobCompletion>();
+
+    // Connect to all hosts and store sessions (shared across concurrent jobs).
     let colors = ColorPalette::new(num_hosts as u32, PaletteType::Pastel, false).colors;
-    for ((host_index, host), color) in zip(hosts.into_iter().enumerate(), colors) {
-        // MPMC channel (used as SPSC) to send the actual command to the SSH session task.
-        let (command_tx, command_rx) = flume::bounded::<Cmd>(1);
-        command_txs.push(command_tx);
-        let notify_tx = notify_tx.clone();
-        let print_period = cli.print_period;
-        let errored = Arc::clone(&errored);
-        // Open a new SSH session with the host.
+    let mut sessions: Vec<Arc<Box<dyn Session + Send + Sync>>> = Vec::with_capacity(num_hosts);
+    let mut host_data: Vec<Host> = Vec::with_capacity(num_hosts);
+    for (host, color) in zip(hosts.into_iter(), colors) {
         let session = host.connect(color).await?;
-        tasks.push(tokio::spawn(async move {
-            // Handlebars registry for filling in parameters.
-            let mut registry = Handlebars::new();
-            handlebars_misc_helpers::register(&mut registry);
-            // When cancellation happens, the scheduling loop will detect that and drop
-            // `notify_rx` and `command_tx`. Thus we can break out of the loop and
-            // gracefully terminate the session.
-            loop {
-                // Request the scheduler a new command.
-                if notify_tx.send_async(host_index).await.is_err() {
-                    break;
-                }
-                // Receive and run the command.
-                match command_rx.recv_async().await {
-                    Ok(cmd) => {
-                        let cmd = cmd.fill_template(&mut registry, &host);
-                        let result = session.run(&cmd, print_period).await;
-                        match result {
-                            Ok(result) => match result.code() {
-                                Some(0) => {}
-                                Some(_) | None => errored.lock().await.push(FailedCmd::new(
-                                    host.to_string(),
-                                    cmd,
-                                    result.to_string(),
-                                )),
-                            },
-                            Err(err) => errored.lock().await.push(FailedCmd::new(
-                                host.to_string(),
-                                cmd,
-                                format!("Pegasus error: {}", err),
-                            )),
-                        }
-                    }
-                    Err(_) => break,
-                };
-            }
-        }));
+        sessions.push(Arc::new(session));
+        host_data.push(host);
     }
 
-    // The scheduling loop that fetches jobs from the job queue and distributes
-    // them to SSH sessions.
+    // Track running job tasks.
+    let mut running_tasks: Vec<tokio::task::JoinHandle<()>> = Vec::new();
+
+    // The scheduling loop that fetches jobs from the job queue and schedules
+    // them on hosts with sufficient slots.
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
     let mut job_queue = JobQueue::new(&cli.queue_file, Arc::clone(&cancelled));
-    let mut host_index;
+    let mut pending_cmd: Option<Cmd> = None;
+
     loop {
-        // `recv_async` will allow the scheduler to react to a new free session
-        // immediately. However, the received `host_index` must be consumed in
-        // some way.
-        host_index = notify_rx.recv_async().await.expect("notify_rx");
         // Check cancel.
         if *cancelled.lock().await {
             eprintln!("[Pegasus] Ctrl-c detected. Stopping scheduling loop...");
             break;
         }
-        if let Some(cmd) = job_queue.next().await {
-            // Next command available.
-            // Use blocking send because submitting jobs is more important
-            // than streaming output from jobs that are already running.
-            command_txs[host_index].send(cmd).expect("command_tx");
-            continue;
-        } else {
-            // Queue empty.
-            // Put the received host_index back to the channel.
-            notify_tx.send_async(host_index).await.expect("notify_tx");
-            // If not in daemon mode and all commands finished,
-            // break out of the scheduling loop.
-            if !cli.daemon && notify_rx.is_full() {
+
+        // Process any completions (non-blocking) - release slots.
+        while let Ok(completion) = completion_rx.try_recv() {
+            slot_states[completion.host_index].release(&completion.released_slots);
+        }
+
+        // Get next job if we don't have a pending one.
+        if pending_cmd.is_none() {
+            pending_cmd = job_queue.next().await;
+        }
+
+        // Try to schedule the pending job.
+        if let Some(cmd) = pending_cmd.take() {
+            // Validate job fits in at least one host.
+            if cmd.slots_required > max_host_slots {
+                eprintln!(
+                    "[Pegasus] ERROR: Job requires {} slots but max host capacity is {}. Aborting.",
+                    cmd.slots_required, max_host_slots
+                );
+                break;
+            }
+
+            // Find a host with enough free slots.
+            if let Some((host_index, allocated_slots)) =
+                find_host_for_job(&mut slot_states, cmd.slots_required)
+            {
+                // Spawn job execution task.
+                let task = spawn_job(
+                    Arc::clone(&sessions[host_index]),
+                    host_data[host_index].clone(),
+                    cmd,
+                    allocated_slots,
+                    completion_tx.clone(),
+                    host_index,
+                    cli.print_period,
+                    Arc::clone(&errored),
+                );
+                running_tasks.push(task);
+            } else {
+                // No host has capacity. Put job back and wait.
+                pending_cmd = Some(cmd);
+            }
+        }
+
+        // If no pending job and no running tasks, check termination.
+        if pending_cmd.is_none() {
+            let slots_in_use: usize = slot_states
+                .iter()
+                .map(|s| s.total_slots() - s.free_slots())
+                .sum();
+            if !cli.daemon && slots_in_use == 0 {
                 break;
             }
         }
-        // Queue is empty but either we're in deamon mode or not all commands
-        // finished running. So we wait.
-        time::sleep(time::Duration::from_secs(3)).await;
+
+        // Wait a bit before next iteration to avoid busy loop.
+        // Use shorter sleep when we have capacity and might get completions soon.
+        let slots_in_use: usize = slot_states
+            .iter()
+            .map(|s| s.total_slots() - s.free_slots())
+            .sum();
+        if pending_cmd.is_some() && slots_in_use > 0 {
+            // We have a pending job but no capacity - wait for a completion.
+            if let Ok(completion) = completion_rx.recv_async().await {
+                slot_states[completion.host_index].release(&completion.released_slots);
+            }
+        } else if pending_cmd.is_none() && slots_in_use == 0 && cli.daemon {
+            // Queue empty, no running jobs, daemon mode - wait for new jobs.
+            time::sleep(time::Duration::from_secs(3)).await;
+        } else {
+            // Brief yield to allow other tasks to run.
+            tokio::task::yield_now().await;
+        }
     }
 
-    // After this, tasks that call recv on command_rx or send on notify_tx will get an Err,
-    // gracefully terminating the SSH session.
-    drop(notify_rx);
-    drop(command_txs);
-
-    // The scheduling loop has terminated, but there should be commands still running.
-    // Wait for all of them to finish.
-    join_all(tasks).await;
+    // Wait for all running tasks to complete.
+    join_all(running_tasks).await;
 
     let errored_commands = errored.lock().await;
     if !errored_commands.is_empty() {
@@ -268,6 +282,62 @@ async fn run_queue(cli: &Config) -> Result<(), PegasusError> {
     }
 
     Ok(())
+}
+
+/// Spawns an async task to execute a job on a host.
+#[allow(clippy::too_many_arguments)]
+fn spawn_job(
+    session: Arc<Box<dyn Session + Send + Sync>>,
+    host: Host,
+    mut cmd: Cmd,
+    allocated_slots: Vec<usize>,
+    completion_tx: flume::Sender<JobCompletion>,
+    host_index: usize,
+    print_period: usize,
+    errored: Arc<Mutex<Vec<FailedCmd>>>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        // Inject {{slots}} template variable with allocated slot indices.
+        let slots_str = allocated_slots
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        cmd.insert_param("slots".to_string(), slots_str);
+
+        // Fill template and run command.
+        let mut registry = Handlebars::new();
+        handlebars_misc_helpers::register(&mut registry);
+        let filled_cmd = cmd.fill_template(&mut registry, &host);
+
+        let result = session.run(&filled_cmd, print_period).await;
+
+        // Record errors.
+        match result {
+            Ok(status) => {
+                if status.code() != Some(0) {
+                    errored.lock().await.push(FailedCmd::new(
+                        host.to_string(),
+                        filled_cmd,
+                        status.to_string(),
+                    ));
+                }
+            }
+            Err(err) => {
+                errored.lock().await.push(FailedCmd::new(
+                    host.to_string(),
+                    filled_cmd,
+                    format!("Pegasus error: {}", err),
+                ));
+            }
+        }
+
+        // Notify scheduler that slots are released.
+        let _ = completion_tx.send(JobCompletion {
+            host_index,
+            released_slots: allocated_slots,
+        });
+    })
 }
 
 async fn run_lock(cli: &Config) {

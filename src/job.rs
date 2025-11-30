@@ -22,6 +22,8 @@ pub struct Cmd {
     command: String,
     /// Command parameters used to fill in the command template.
     params: HashMap<String, String>,
+    /// Number of slots this command requires. Defaults to 1.
+    pub slots_required: usize,
 }
 
 impl Cmd {
@@ -29,12 +31,22 @@ impl Cmd {
         Self {
             command,
             params: HashMap::new(),
+            slots_required: 1,
         }
     }
 
     fn into_map(mut self) -> HashMap<String, Vec<String>> {
         self.params.insert("command".to_string(), self.command);
+        if self.slots_required != 1 {
+            self.params
+                .insert("slots".to_string(), self.slots_required.to_string());
+        }
         self.params.into_iter().map(|(k, v)| (k, vec![v])).collect()
+    }
+
+    /// Insert a parameter into the command's params.
+    pub fn insert_param(&mut self, key: String, value: String) {
+        self.params.insert(key, value);
     }
 
     pub fn fill_template(mut self, register: &mut Handlebars, host: &Host) -> String {
@@ -156,9 +168,19 @@ impl JobQueue {
 
                 // Job spec looks good. Perform cartesian product.
                 let JobSpec(JobSpecInner(mut spec)) = job_spec;
+
+                // Extract slots BEFORE cartesian product - it's not a parameter to expand.
+                let slots_required: usize = spec
+                    .remove("slots")
+                    .and_then(|v| v.into_iter().next())
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(1);
+
                 let mut job = vec![];
                 for command in spec.remove("command").unwrap() {
-                    job.push(Cmd::new(command));
+                    let mut cmd = Cmd::new(command);
+                    cmd.slots_required = slots_required;
+                    job.push(cmd);
                 }
                 for (key, values) in spec {
                     let mut expanded = Vec::with_capacity(values.len());
@@ -211,5 +233,43 @@ impl JobQueue {
                 time::sleep(time::Duration::from_secs(5)).await;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cmd_new_defaults_to_one_slot() {
+        let cmd = Cmd::new("echo hello".to_string());
+        assert_eq!(cmd.slots_required, 1);
+    }
+
+    #[test]
+    fn test_cmd_into_map_without_slots() {
+        let cmd = Cmd::new("echo hello".to_string());
+        let map = cmd.into_map();
+        // slots=1 is the default, so it should NOT be in the map
+        assert!(!map.contains_key("slots"));
+        assert!(map.contains_key("command"));
+    }
+
+    #[test]
+    fn test_cmd_into_map_with_slots() {
+        let mut cmd = Cmd::new("echo hello".to_string());
+        cmd.slots_required = 4;
+        let map = cmd.into_map();
+        // slots=4 is not the default, so it SHOULD be in the map
+        assert!(map.contains_key("slots"));
+        assert_eq!(map.get("slots").unwrap(), &vec!["4".to_string()]);
+    }
+
+    #[test]
+    fn test_cmd_insert_param() {
+        let mut cmd = Cmd::new("echo {{msg}}".to_string());
+        cmd.insert_param("msg".to_string(), "hello".to_string());
+        let map = cmd.into_map();
+        assert_eq!(map.get("msg").unwrap(), &vec!["hello".to_string()]);
     }
 }

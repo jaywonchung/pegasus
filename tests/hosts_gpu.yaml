@@ -1,0 +1,9 @@
+# Example: Two 8-GPU nodes for resource-aware scheduling.
+# Each host has 8 slots (GPUs). Multiple jobs can run concurrently
+# on the same host if they fit within the available slots.
+
+- hostname:
+    - gpu-node-0
+    - gpu-node-1
+  slots:
+    - 8

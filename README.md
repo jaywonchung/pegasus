@@ -15,6 +15,7 @@ Run a list of commands on a set of SSH nodes. With a bit of optional parametriza
 - Two modes:
   - **Broadcast** mode runs each command on every node.
   - **Queue** mode runs each command once on the next free node.
+- **Resource-aware scheduling** with slots (e.g., GPUs). Multiple jobs can run concurrently on one node.
 - Modify the **file-based queue** (`queue.yaml`) while Pegasus is running.
 - **Parametrize** hosts and commands.
 
@@ -92,6 +93,59 @@ You can use these parameters in your commands. By the way, the templating engine
 ```
 
 Four sub-nodes and four jobs. So all jobs will start executing at the same time.
+
+### Resource-Aware Scheduling with Slots
+
+When running GPU jobs, you often want multiple jobs to share a single node. For example, an 8-GPU node can run four 2-GPU jobs concurrently. Pegasus supports this with **slots**.
+
+```yaml
+# hosts.yaml
+- hostname:
+    - gpu-node-1
+    - gpu-node-2
+  slots:
+    - 8
+```
+
+Each host now has 8 slots (e.g., 8 GPUs). Jobs can declare how many slots they need:
+
+```yaml
+# queue.yaml
+# 8-GPU job: uses all GPUs on one node
+- command:
+    - CUDA_VISIBLE_DEVICES={{slots}} python train.py --model llama-70b
+  slots:
+    - 8
+
+# 4-GPU jobs: two can run concurrently on an 8-GPU node
+- command:
+    - CUDA_VISIBLE_DEVICES={{slots}} python train.py --model llama-7b
+    - CUDA_VISIBLE_DEVICES={{slots}} python train.py --model mistral-7b
+  slots:
+    - 4
+
+# 2-GPU jobs: four can run concurrently on an 8-GPU node
+- command:
+    - CUDA_VISIBLE_DEVICES={{slots}} python train.py --model {{model}}
+  model:
+    - bert
+    - roberta
+    - gpt2
+    - t5
+  slots:
+    - 2
+```
+
+The `{{slots}}` variable is automatically injected with the allocated slot indices (e.g., `0,1,2,3` for a 4-slot job). Use it with `CUDA_VISIBLE_DEVICES` to control which GPUs your job uses.
+
+**Key behaviors:**
+- Jobs without `slots` default to 1 slot (backwards compatible).
+- Hosts without `slots` default to 1 slot (backwards compatible).
+- Allocation is **NVLink-aware**: prefers contiguous pairs starting at even indices (0-1, 2-3, 4-5, 6-7) for better GPU interconnect performance.
+- Jobs are scheduled in **FIFO order**. If the next job doesn't fit, Pegasus waits for slots to free up.
+- A job requiring more slots than any single host can provide will cause Pegasus to abort with an error.
+
+**Tip:** Order your jobs by descending slot count for better packing efficiency.
 
 ### Parametrizing Commands for Conciseness
 

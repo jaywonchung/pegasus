@@ -1,0 +1,38 @@
+# Example: GPU jobs with varying slot requirements.
+# Jobs are ordered by descending slot count (recommended for efficient packing).
+# The {{slots}} variable is automatically injected with allocated GPU indices.
+
+# 8-GPU job: Uses all GPUs on one node
+- command:
+    - echo "[{{hostname}}] 8-GPU job using GPUs {{slots}}"; sleep 2
+  slots:
+    - 8
+
+# 4-GPU jobs: Two can run concurrently on an 8-GPU node
+- command:
+    - echo "[{{hostname}}] 4-GPU job A using GPUs {{slots}}"; sleep 1
+    - echo "[{{hostname}}] 4-GPU job B using GPUs {{slots}}"; sleep 1
+  slots:
+    - 4
+
+# 2-GPU jobs: NVLink-aware allocation prefers pairs (0,1), (2,3), (4,5), (6,7)
+- command:
+    - echo "[{{hostname}}] 2-GPU job ({{model}}) using GPUs {{slots}}"; sleep 0.5
+  model:
+    - resnet
+    - vgg
+    - bert
+    - gpt
+  slots:
+    - 2
+
+# 1-GPU jobs: Can pack 8 per node
+- command:
+    - echo "[{{hostname}}] 1-GPU job ({{task}}) using GPU {{slots}}"; sleep 0.3
+  task:
+    - inference-1
+    - inference-2
+    - inference-3
+    - inference-4
+  slots:
+    - 1
