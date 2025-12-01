@@ -91,6 +91,23 @@ impl Debug for FailedCmd {
     }
 }
 
+/// Validates that a queue file is properly parsable.
+/// Returns Ok(job_count) if valid, Err with message if invalid.
+pub fn validate_queue_file(path: &str) -> Result<usize, String> {
+    let file = std::fs::File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
+    let specs: Vec<JobSpec> =
+        serde_yaml::from_reader(file).map_err(|e| format!("Failed to parse YAML: {}", e))?;
+
+    // Validate each job spec has a "command" key
+    for (i, spec) in specs.iter().enumerate() {
+        if !spec.0 .0.contains_key("command") {
+            return Err(format!("Job {} is missing 'command' key", i));
+        }
+    }
+
+    Ok(specs.len())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct JobSpec(#[serde(deserialize_with = "string_or_mapping")] JobSpecInner);
 
