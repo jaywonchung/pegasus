@@ -100,7 +100,7 @@ pub fn validate_queue_file(path: &str) -> Result<usize, String> {
 
     // Validate each job spec has a "command" key
     for (i, spec) in specs.iter().enumerate() {
-        if !spec.0 .0.contains_key("command") {
+        if !spec.0.0.contains_key("command") {
             return Err(format!("Job {} is missing 'command' key", i));
         }
     }
