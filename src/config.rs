@@ -30,11 +30,11 @@ pub struct Config {
     pub print_period: usize,
 
     /// Queue file to use. Defaults to `queue.yaml`
-    #[arg(long, default_value = "queue.yaml")]
+    #[arg(long, short = 'Q', default_value = "queue.yaml")]
     pub queue_file: String,
 
     /// Host file to use. Defaults to `hosts.yaml`
-    #[arg(long, default_value = "hosts.yaml")]
+    #[arg(long, short = 'H', default_value = "hosts.yaml")]
     pub hosts_file: String,
 }
 
