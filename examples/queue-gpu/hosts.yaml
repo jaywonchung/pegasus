@@ -4,15 +4,12 @@
 
 - hostname:
     - gpu-node-01
-  slots:
-    - 8  # 8 GPUs on this node
+  slots: 8  # 8 GPUs on this node
 
 - hostname:
     - gpu-node-02
-  slots:
-    - 8
+  slots: 8
 
 - hostname:
     - gpu-node-03
-  slots:
-    - 4  # Only 4 GPUs on this node
+  slots: 4  # Only 4 GPUs on this node

@@ -278,8 +278,7 @@ mod tests {
         let mut cmd = Cmd::new("echo hello".to_string());
         cmd.slots_required = 4;
         let map = cmd.into_map();
-        // slots=4 is not the default, so it SHOULD be in the map
-        assert!(map.contains_key("slots"));
+        // slots=4 is not the default, so it should be in the map
         assert_eq!(map.get("slots").unwrap(), &vec!["4".to_string()]);
     }
 

@@ -16,7 +16,7 @@ use serde::Deserialize;
 use void::Void;
 
 use crate::error::PegasusError;
-use crate::serde::string_or_mapping;
+use crate::serde::{HostSpecParsed, string_or_mapping};
 use crate::session::{LocalSession, RemoteSession, Session};
 
 #[derive(Debug, Clone)]
@@ -110,15 +110,18 @@ struct HostSpec(#[serde(deserialize_with = "string_or_mapping")] HostSpecInner);
 
 #[derive(Debug, Deserialize)]
 #[serde(transparent)]
-struct HostSpecInner(HashMap<String, Vec<String>>);
+struct HostSpecInner(HostSpecParsed);
 
 impl FromStr for HostSpecInner {
     type Err = Void;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut map = HashMap::new();
-        map.insert("hostname".to_string(), vec![s.to_string()]);
-        Ok(Self(map))
+        let mut params = HashMap::new();
+        params.insert("hostname".to_string(), vec![s.to_string()]);
+        Ok(Self(HostSpecParsed {
+            slots: None,
+            params,
+        }))
     }
 }
 
@@ -133,7 +136,7 @@ pub fn get_hosts(hosts_file: &str) -> Vec<Host> {
     // should have the key 'hostname'.
     if !host_specs
         .iter()
-        .all(|spec| spec.0.0.contains_key("hostname"))
+        .all(|spec| spec.0.0.params.contains_key("hostname"))
     {
         panic!(
             "A parametrized entry in {} is missing the 'hostname' key.",
@@ -145,24 +148,20 @@ pub fn get_hosts(hosts_file: &str) -> Vec<Host> {
     let mut hosts = Vec::with_capacity(host_specs.len());
     // Each spec is completely independent. Each spec will expand to `expanded` and they'll
     // simply concatenate to form the final `hosts` vector.
-    for HostSpec(HostSpecInner(mut spec)) in host_specs {
-        // Extract slots BEFORE cartesian product - it's not a parameter to expand.
-        let slots: usize = spec
-            .remove("slots")
-            .and_then(|v| v.into_iter().next())
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(1);
+    for HostSpec(HostSpecInner(spec)) in host_specs {
+        let slots = spec.slots.unwrap_or(1);
+        let mut params = spec.params;
 
         let mut expanded = vec![];
         // We checked before that every `spec` has the key 'hostname'.
-        for hostname in spec.remove("hostname").unwrap() {
+        for hostname in params.remove("hostname").unwrap() {
             let mut host = Host::new(hostname);
             host.slots = slots;
             expanded.push(host);
         }
         // For each parameter (String -> Vec<String>), the size of `expanded` will increase
         // by the number of possible values.
-        for (key, values) in spec {
+        for (key, values) in params {
             let mut part_expanded = Vec::with_capacity(values.len());
             for host in expanded {
                 for value in values.iter() {

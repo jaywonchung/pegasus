@@ -14,7 +14,7 @@
   slots:
     - 8
   model:
-    - gpt2-xl
+    - qwen3-8b
     - llama-7b
   dataset:
     - wikitext
@@ -31,8 +31,8 @@
   slots:
     - 4
   model:
-    - gpt2-medium
-    - gpt2-large
+    - qwen3-8b
+    - qwen3-14b
   lr:
     - 1e-4
     - 5e-5
@@ -56,3 +56,14 @@
   ckpt:
     - checkpoints/model_best.pt
     - checkpoints/model_final.pt
+
+# GPU scaling benchmark - same job with 1, 2, 4, 8 GPUs to measure scaling efficiency
+- command:
+    - CUDA_VISIBLE_DEVICES={{slots}} python benchmark.py --model {{model}}
+  slots:
+    - 1
+    - 2
+    - 4
+    - 8
+  model:
+    - llama-7b

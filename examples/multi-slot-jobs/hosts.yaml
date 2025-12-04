@@ -5,8 +5,7 @@
 - hostname:
     - dgx-01
     - dgx-02
-  slots:
-    - 8
+  slots: 8
   node_type:
     - dgx
 
@@ -15,7 +14,6 @@
     - cloud-gpu-01
     - cloud-gpu-02
     - cloud-gpu-03
-  slots:
-    - 4
+  slots: 4
   node_type:
     - cloud
