@@ -190,25 +190,21 @@ impl JobQueue {
                 // Job spec looks good. Perform cartesian product.
                 let JobSpec(JobSpecInner(mut spec)) = job_spec;
 
-                // Extract slots BEFORE cartesian product - it's not a parameter to expand.
-                let slots_required: usize = spec
-                    .remove("slots")
-                    .and_then(|v| v.into_iter().next())
-                    .and_then(|s| s.parse().ok())
-                    .unwrap_or(1);
-
                 let mut job = vec![];
                 for command in spec.remove("command").unwrap() {
-                    let mut cmd = Cmd::new(command);
-                    cmd.slots_required = slots_required;
-                    job.push(cmd);
+                    job.push(Cmd::new(command));
                 }
                 for (key, values) in spec {
                     let mut expanded = Vec::with_capacity(values.len());
                     for command in job {
                         for value in values.iter() {
                             let mut command = command.clone();
-                            command.params.insert(key.clone(), value.clone());
+                            if key == "slots" {
+                                // slots is special: set slots_required instead of adding to params
+                                command.slots_required = value.parse().unwrap_or(1);
+                            } else {
+                                command.params.insert(key.clone(), value.clone());
+                            }
                             expanded.push(command);
                         }
                     }
