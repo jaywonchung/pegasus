@@ -15,7 +15,7 @@ Run a list of commands on a set of SSH nodes. With a bit of optional parametriza
 - Two modes:
   - **Broadcast** mode runs each command on every node.
   - **Queue** mode runs each command once on the next free node.
-- **Resource-aware scheduling** with slots (e.g., GPUs). Multiple jobs can run concurrently on one node.
+    - Hosts can expose integer *slots* and jobs can request integer *slots* needed to run (good for GPU node slicing).
 - Modify the **file-based queue** (`queue.yaml`) while Pegasus is running.
 - **Parametrize** hosts and commands.
 

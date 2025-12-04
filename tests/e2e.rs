@@ -474,29 +474,31 @@ async fn test_e2e_slots_template_variable_injected() {
 fn test_example_host_files_are_valid() {
     let examples_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples");
 
-    let host_files = [
-        "broadcast-hosts.yaml",
-        "terraform-hosts.yaml",
-        "queue-hosts-simple.yaml",
-        "queue-hosts-gpu.yaml",
-        "queue-hosts-heterogeneous.yaml",
-        "param-hosts.yaml",
-        "slots-param-hosts.yaml",
-    ];
-
-    for file in host_files {
-        let path = examples_dir.join(file);
-        let path_str = path.to_str().unwrap();
-
+    let mut found_any = false;
+    for entry in std::fs::read_dir(&examples_dir).unwrap() {
+        let entry = entry.unwrap();
+        if !entry.file_type().unwrap().is_dir() {
+            continue;
+        }
+        let hosts_path = entry.path().join("hosts.yaml");
+        if !hosts_path.exists() {
+            continue;
+        }
+        found_any = true;
+        let path_str = hosts_path.to_str().unwrap();
         let hosts = get_hosts(path_str);
         assert!(
             !hosts.is_empty(),
-            "Host file {} should contain at least one host",
-            file
+            "Host file {:?} should contain at least one host",
+            hosts_path
         );
-
-        println!("{}: {} hosts parsed successfully", file, hosts.len());
+        println!(
+            "{:?}: {} hosts parsed successfully",
+            hosts_path,
+            hosts.len()
+        );
     }
+    assert!(found_any, "No hosts.yaml files found in examples/");
 }
 
 /// Test that all queue YAML files in examples/ are properly parsable.
@@ -506,37 +508,32 @@ fn test_example_queue_files_are_valid() {
 
     let examples_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples");
 
-    let queue_files = [
-        "broadcast-queue.yaml",
-        "terraform-queue.yaml",
-        "queue-simple.yaml",
-        "queue-gpu.yaml",
-        "queue-heterogeneous.yaml",
-        "param-queue.yaml",
-        "param-queue-sweep.yaml",
-        "param-combined.yaml",
-        "slots-param-queue.yaml",
-    ];
-
-    for file in queue_files {
-        let path = examples_dir.join(file);
-        let path_str = path.to_str().unwrap();
-
+    let mut found_any = false;
+    for entry in std::fs::read_dir(&examples_dir).unwrap() {
+        let entry = entry.unwrap();
+        if !entry.file_type().unwrap().is_dir() {
+            continue;
+        }
+        let queue_path = entry.path().join("queue.yaml");
+        if !queue_path.exists() {
+            continue;
+        }
+        found_any = true;
+        let path_str = queue_path.to_str().unwrap();
         let result = validate_queue_file(path_str);
         assert!(
             result.is_ok(),
-            "Queue file {} failed to parse: {}",
-            file,
+            "Queue file {:?} failed to parse: {}",
+            queue_path,
             result.unwrap_err()
         );
-
         let job_count = result.unwrap();
         assert!(
             job_count > 0,
-            "Queue file {} should contain at least one job",
-            file
+            "Queue file {:?} should contain at least one job",
+            queue_path
         );
-
-        println!("{}: {} jobs parsed successfully", file, job_count);
+        println!("{:?}: {} jobs parsed successfully", queue_path, job_count);
     }
+    assert!(found_any, "No queue.yaml files found in examples/");
 }
