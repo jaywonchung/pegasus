@@ -1,5 +1,5 @@
 /target
-hosts.yaml
-queue.yaml
-consumed.yaml
+/hosts.yaml
+/queue.yaml
+/consumed.yaml
 **/.DS_Store

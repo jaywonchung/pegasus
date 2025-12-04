@@ -1,35 +1,36 @@
 # Pegasus Examples
 
-This directory contains example host and queue YAML files demonstrating various Pegasus features.
+Each directory contains a `hosts.yaml` and `queue.yaml` pair demonstrating a specific feature.
 
-## Directory Structure
+## Broadcast Mode
 
-### Broadcast Mode Examples
-- `broadcast-hosts.yaml` + `broadcast-queue.yaml` - Basic broadcast (run same command on all hosts)
-- `terraform-hosts.yaml` + `terraform-queue.yaml` - Node setup/terraforming example
+- **`terraform/`** - Mass node setup/provisioning before running jobs
 
-### Queue Mode Examples
-- `queue-hosts-simple.yaml` + `queue-simple.yaml` - Basic job queue (1 slot per host)
-- `queue-hosts-gpu.yaml` + `queue-gpu.yaml` - GPU cluster with slots for concurrent jobs
-- `queue-hosts-heterogeneous.yaml` + `queue-heterogeneous.yaml` - Mixed cluster (different slot counts)
+## Queue Mode
 
-### Parametrization Examples
-- `param-hosts.yaml` + `param-queue.yaml` - Host parametrization (same host, different params)
-- `param-queue-sweep.yaml` - Job parametrization (hyperparameter sweep)
-- `param-combined.yaml` - Combined host + job parametrization
+- **`queue-simple/`** - Basic job queue with 1 slot per host
+- **`queue-gpu/`** - GPU cluster with multiple slots for concurrent jobs
+- **`queue-heterogeneous/`** - Mixed cluster with different slot counts per host
 
-### Resource Slots + Parametrization
-- `slots-param-hosts.yaml` + `slots-param-queue.yaml` - Multi-GPU jobs with parametrization
+## Parametrization
+
+- **`host-parametrization/`** - Expand one physical host into multiple logical hosts with different parameters
+- **`job-parametrization/`** - Expand jobs via Cartesian product (hyperparameter sweeps)
+- **`combined-parametrization/`** - Both host and job parametrization together
+
+## Slots + Parametrization
+
+- **`multi-slot-jobs/`** - Jobs requiring multiple slots with host parameters
 
 ## Usage
 
 ```bash
 # Broadcast mode
-pegasus b --hosts-file examples/broadcast-hosts.yaml --queue-file examples/broadcast-queue.yaml
+pegasus b --hosts-file examples/terraform/hosts.yaml --queue-file examples/terraform/queue.yaml
 
 # Queue mode
-pegasus q --hosts-file examples/queue-hosts-gpu.yaml --queue-file examples/queue-gpu.yaml
+pegasus q --hosts-file examples/queue-gpu/hosts.yaml --queue-file examples/queue-gpu/queue.yaml
 
-# Daemon mode (keeps running, watches for new jobs)
-pegasus q --hosts-file examples/queue-hosts-gpu.yaml --queue-file examples/queue-gpu.yaml --daemon
+# Daemon mode
+pegasus q --hosts-file examples/queue-gpu/hosts.yaml --queue-file examples/queue-gpu/queue.yaml --daemon
 ```

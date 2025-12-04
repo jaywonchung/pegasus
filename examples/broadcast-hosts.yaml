@@ -1,6 +1,0 @@
-# Simple list of hosts for broadcast mode.
-# In broadcast mode, each command is sent to ALL hosts simultaneously.
-- node01.cluster.local
-- node02.cluster.local
-- node03.cluster.local
-- node04.cluster.local

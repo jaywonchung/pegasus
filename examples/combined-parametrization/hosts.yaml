@@ -10,12 +10,5 @@
     - 1
     - 2
     - 3
-# Expands to 4 hosts, each with a different gpu_id parameter.
+# Expands to 4 logical hosts, each with a different gpu_id parameter.
 # Commands can use {{gpu_id}} to get the assigned GPU.
-
-# Multiple physical hosts with environment labels
-- hostname:
-    - prod-server-01
-    - prod-server-02
-  env:
-    - production

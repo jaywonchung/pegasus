@@ -1,0 +1,8 @@
+# Jobs using host parameters.
+# {{gpu_id}} comes from the host's parameters.
+# 4 logical hosts means up to 4 jobs run concurrently.
+
+- CUDA_VISIBLE_DEVICES={{gpu_id}} python benchmark.py --model small
+- CUDA_VISIBLE_DEVICES={{gpu_id}} python benchmark.py --model medium
+- CUDA_VISIBLE_DEVICES={{gpu_id}} python benchmark.py --model large
+- CUDA_VISIBLE_DEVICES={{gpu_id}} python benchmark.py --model xlarge

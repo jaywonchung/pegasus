@@ -3,7 +3,7 @@
 # {{model}}, {{dataset}} = job parameters (from this file)
 # {{hostname}}, {{node_type}} = host parameters (from hosts file)
 
-# 8-GPU distributed training sweep (only runs on DGX nodes)
+# 8-GPU distributed training sweep (only fits on 8-slot hosts)
 - command:
     - |
       CUDA_VISIBLE_DEVICES={{slots}} \
