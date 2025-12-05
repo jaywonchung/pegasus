@@ -4,14 +4,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use clap::Parser;
 use colourado::{ColorPalette, PaletteType};
 use futures::future::join_all;
-use handlebars::Handlebars;
 use std::iter::zip;
 use tokio::sync::{Barrier, Mutex, broadcast};
 use tokio::time;
 
 use pegasus_ssh::{
-    Cmd, Config, Host, HostSlotState, JobCompletion, JobQueue, LockedFile, Mode, PegasusError,
-    Session, find_host_for_job, get_hosts, spawn_job,
+    Cmd, Config, FailedCmd, Host, HostSlotState, JobCompletion, JobQueue, LockedFile, Mode,
+    PegasusError, Session, find_host_for_job, get_hosts, spawn_job,
 };
 
 async fn run_broadcast(cli: &Config) -> Result<(), PegasusError> {
@@ -54,16 +53,13 @@ async fn run_broadcast(cli: &Config) -> Result<(), PegasusError> {
         // Open a new SSH session with the host.
         let session = host.connect(color).await?;
         tasks.push(tokio::spawn(async move {
-            // Handlebars registry for filling in parameters.
-            let mut registry = Handlebars::new();
-            handlebars_misc_helpers::register(&mut registry);
             // When cancellation is triggered by the ctrlc handler, the
             // scheduling loop will see that, break, and drop `command_tx`.
             // Then `command_rx.recv()` will return `Err`, allowing the
             // session object to be dropped, and everyting gracefully
             // terminated.
             while let Ok(cmd) = command_rx.recv().await {
-                let cmd = cmd.fill_template(&mut registry, &host);
+                let cmd = cmd.fill_template(&host);
                 let result = session.run(&cmd, print_period).await;
                 if result.is_err() || result.unwrap().code() != Some(0) {
                     errored.store(true, Ordering::Relaxed);
@@ -140,8 +136,7 @@ async fn run_queue(cli: &Config) -> Result<(), PegasusError> {
     let errored = Arc::new(Mutex::new(vec![]));
 
     // Initialize slot state for each host.
-    let mut slot_states: Vec<HostSlotState> =
-        hosts.iter().map(|h| HostSlotState::new(h.slots)).collect();
+    let mut slot_states: Vec<_> = hosts.iter().map(|h| HostSlotState::new(h.slots)).collect();
     let max_host_slots = hosts.iter().map(|h| h.slots).max().unwrap_or(0);
 
     // Channel for job completion notifications.
@@ -186,11 +181,17 @@ async fn run_queue(cli: &Config) -> Result<(), PegasusError> {
         if let Some(cmd) = pending_cmd.take() {
             // Validate job fits in at least one host.
             if cmd.slots_required > max_host_slots {
-                eprintln!(
-                    "[Pegasus] ERROR: Job requires {} slots but max host capacity is {}. Aborting.",
+                let error_msg = format!(
+                    "Job requires {} slots but max host capacity is {}",
                     cmd.slots_required, max_host_slots
                 );
-                break;
+                eprintln!("[Pegasus] ERROR: {}. Skipping.", error_msg);
+                errored.lock().await.push(FailedCmd::new(
+                    "(no host)".to_string(),
+                    cmd.command.clone(),
+                    error_msg,
+                ));
+                continue;
             }
 
             // Find a host with enough free slots.

@@ -18,7 +18,7 @@ use crate::sync::LockedFile;
 #[derive(Debug, Clone)]
 pub struct Cmd {
     /// Command (template).
-    command: String,
+    pub command: String,
     /// Command parameters used to fill in the command template.
     params: HashMap<String, String>,
     /// Number of slots this command requires. Defaults to 1.
@@ -53,16 +53,16 @@ impl Cmd {
         self.params.insert(key, value);
     }
 
-    pub fn fill_template(mut self, register: &mut Handlebars, host: &Host) -> String {
-        if !register.has_template(&self.command) {
-            register
-                .register_template_string(&self.command, &self.command)
-                .expect("Failed to register template string.");
-        }
+    pub fn fill_template(mut self, host: &Host) -> String {
+        let mut registry = Handlebars::new();
+        handlebars_misc_helpers::register(&mut registry);
+        registry
+            .register_template_string(&self.command, &self.command)
+            .expect("Failed to register template string.");
         let host = host.clone();
         self.params.extend(host.params);
         self.params.insert("hostname".to_string(), host.hostname);
-        register
+        registry
             .render(&self.command, &self.params)
             .unwrap_or_else(|e| {
                 panic!(

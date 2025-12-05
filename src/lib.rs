@@ -1,4 +1,4 @@
-//! Pegasus: A Multi-Node SSH Command Runner with Resource-Aware Scheduling.
+//! Pegasus: A Multi-Node SSH Command Runner.
 
 // Serde helper module.
 mod serde;

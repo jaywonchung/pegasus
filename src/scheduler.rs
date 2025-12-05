@@ -6,7 +6,6 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use handlebars::Handlebars;
 use tokio::sync::Mutex;
 
 use crate::host::Host;
@@ -158,9 +157,7 @@ pub fn spawn_job(
         cmd.insert_param("slots".to_string(), slots_str);
 
         // Fill template and run command.
-        let mut registry = Handlebars::new();
-        handlebars_misc_helpers::register(&mut registry);
-        let filled_cmd = cmd.fill_template(&mut registry, &host);
+        let filled_cmd = cmd.fill_template(&host);
 
         let result = session.run(&filled_cmd, print_period).await;
 
