@@ -1,0 +1,18 @@
+# Jobs for heterogeneous GPU cluster.
+# Jobs requiring more slots only fit on larger hosts.
+
+# 8-GPU job - only fits on gpu-server-8x
+- command:
+    - CUDA_VISIBLE_DEVICES={{slots}} torchrun --nproc_per_node=8 train.py --model xlarge
+  slots:
+    - 8
+
+# 4-GPU jobs - fit on any host
+- command:
+    - CUDA_VISIBLE_DEVICES={{slots}} torchrun --nproc_per_node=4 train.py --model large
+  slots:
+    - 4
+
+# Single-GPU jobs - fit on any host with a free slot
+- CUDA_VISIBLE_DEVICES={{slots}} python train.py --model small
+- CUDA_VISIBLE_DEVICES={{slots}} python train.py --model medium

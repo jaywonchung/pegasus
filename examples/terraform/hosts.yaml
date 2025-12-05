@@ -1,0 +1,6 @@
+# Hosts to terraform (set up from scratch).
+# Use broadcast mode to run setup commands on all nodes.
+- gpu01.lab.university.edu
+- gpu02.lab.university.edu
+- gpu03.lab.university.edu
+- gpu04.lab.university.edu

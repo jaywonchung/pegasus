@@ -16,7 +16,7 @@ use serde::Deserialize;
 use void::Void;
 
 use crate::error::PegasusError;
-use crate::serde::string_or_mapping;
+use crate::serde::{HostSpecParsed, string_or_mapping};
 use crate::session::{LocalSession, RemoteSession, Session};
 
 #[derive(Debug, Clone)]
@@ -25,6 +25,8 @@ pub struct Host {
     pub hostname: String,
     /// Sub-host parameters used to fill in templates.
     pub params: HashMap<String, String>,
+    /// Number of slots (e.g., GPUs) this host provides. Defaults to 1.
+    pub slots: usize,
 }
 
 impl Host {
@@ -32,6 +34,7 @@ impl Host {
         Self {
             hostname,
             params: HashMap::new(),
+            slots: 1,
         }
     }
 
@@ -76,13 +79,22 @@ impl Host {
 
 impl fmt::Display for Host {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.params.is_empty() {
+        let has_params = !self.params.is_empty();
+        let has_slots = self.slots != 1;
+
+        if !has_params && !has_slots {
             write!(f, "[{}]", self.hostname)?;
         } else {
             write!(f, "[{} (", self.hostname)?;
-            for (i, (key, value)) in sorted(self.params.iter()).enumerate() {
-                if i == 0 {
+            let mut first = true;
+            if has_slots {
+                write!(f, "slots={}", self.slots)?;
+                first = false;
+            }
+            for (key, value) in sorted(self.params.iter()) {
+                if first {
                     write!(f, "{}={}", key, value)?;
+                    first = false;
                 } else {
                     write!(f, ",{}={}", key, value)?;
                 }
@@ -98,15 +110,18 @@ struct HostSpec(#[serde(deserialize_with = "string_or_mapping")] HostSpecInner);
 
 #[derive(Debug, Deserialize)]
 #[serde(transparent)]
-struct HostSpecInner(HashMap<String, Vec<String>>);
+struct HostSpecInner(HostSpecParsed);
 
 impl FromStr for HostSpecInner {
     type Err = Void;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut map = HashMap::new();
-        map.insert("hostname".to_string(), vec![s.to_string()]);
-        Ok(Self(map))
+        let mut params = HashMap::new();
+        params.insert("hostname".to_string(), vec![s.to_string()]);
+        Ok(Self(HostSpecParsed {
+            slots: None,
+            params,
+        }))
     }
 }
 
@@ -121,7 +136,7 @@ pub fn get_hosts(hosts_file: &str) -> Vec<Host> {
     // should have the key 'hostname'.
     if !host_specs
         .iter()
-        .all(|spec| spec.0 .0.contains_key("hostname"))
+        .all(|spec| spec.0.0.params.contains_key("hostname"))
     {
         panic!(
             "A parametrized entry in {} is missing the 'hostname' key.",
@@ -133,15 +148,20 @@ pub fn get_hosts(hosts_file: &str) -> Vec<Host> {
     let mut hosts = Vec::with_capacity(host_specs.len());
     // Each spec is completely independent. Each spec will expand to `expanded` and they'll
     // simply concatenate to form the final `hosts` vector.
-    for HostSpec(HostSpecInner(mut spec)) in host_specs {
+    for HostSpec(HostSpecInner(spec)) in host_specs {
+        let slots = spec.slots.unwrap_or(1);
+        let mut params = spec.params;
+
         let mut expanded = vec![];
         // We checked before that every `spec` has the key 'hostname'.
-        for hostname in spec.remove("hostname").unwrap() {
-            expanded.push(Host::new(hostname));
+        for hostname in params.remove("hostname").unwrap() {
+            let mut host = Host::new(hostname);
+            host.slots = slots;
+            expanded.push(host);
         }
         // For each parameter (String -> Vec<String>), the size of `expanded` will increase
         // by the number of possible values.
-        for (key, values) in spec {
+        for (key, values) in params {
             let mut part_expanded = Vec::with_capacity(values.len());
             for host in expanded {
                 for value in values.iter() {
@@ -169,4 +189,40 @@ pub fn get_hosts(hosts_file: &str) -> Vec<Host> {
     let hosts = hosts.into_iter().flatten().collect();
     eprintln!("[Pegasus] Hosts detected:\n{:#?}", &hosts);
     hosts
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_host_new_defaults_to_one_slot() {
+        let host = Host::new("test-host".to_string());
+        assert_eq!(host.slots, 1);
+        assert_eq!(host.hostname, "test-host");
+        assert!(host.params.is_empty());
+    }
+
+    #[test]
+    fn test_host_display_without_slots() {
+        let host = Host::new("test-host".to_string());
+        assert_eq!(format!("{}", host), "[test-host]");
+    }
+
+    #[test]
+    fn test_host_display_with_slots() {
+        let mut host = Host::new("test-host".to_string());
+        host.slots = 8;
+        assert_eq!(format!("{}", host), "[test-host (slots=8)]");
+    }
+
+    #[test]
+    fn test_host_display_with_slots_and_params() {
+        let mut host = Host::new("test-host".to_string());
+        host.slots = 4;
+        host.params.insert("gpu".to_string(), "nvidia".to_string());
+        let display = format!("{}", host);
+        assert!(display.contains("slots=4"));
+        assert!(display.contains("gpu=nvidia"));
+    }
 }

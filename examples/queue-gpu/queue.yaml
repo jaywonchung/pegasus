@@ -1,0 +1,22 @@
+# GPU jobs with slot requirements.
+# {{slots}} is replaced with allocated GPU indices (e.g., "0,1,2,3").
+
+# Single-GPU jobs (default: slots=1)
+- CUDA_VISIBLE_DEVICES={{slots}} python train.py --model small
+- CUDA_VISIBLE_DEVICES={{slots}} python train.py --model medium
+
+# Multi-GPU job requiring 4 GPUs
+- command:
+    - CUDA_VISIBLE_DEVICES={{slots}} torchrun --nproc_per_node=4 train.py --model large
+  slots:
+    - 4
+
+# 2-GPU jobs
+- command:
+    - CUDA_VISIBLE_DEVICES={{slots}} python train.py --model medium --lr {{lr}}
+  slots:
+    - 2
+  lr:
+    - 0.01
+    - 0.001
+    - 0.0001

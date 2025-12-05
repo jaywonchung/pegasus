@@ -232,7 +232,7 @@ fn strip_ansi_codes(s: &str) -> String {
             // Start of ANSI escape sequence
             if chars.peek() == Some(&'[') {
                 chars.next(); // consume '['
-                              // Skip until we find a letter (end of escape sequence)
+                // Skip until we find a letter (end of escape sequence)
                 for ch in chars.by_ref() {
                     if ch.is_ascii_alphabetic() {
                         break;
