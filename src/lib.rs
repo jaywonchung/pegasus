@@ -20,7 +20,7 @@ pub mod error;
 pub use config::{Config, Mode};
 pub use error::PegasusError;
 pub use host::{Host, get_hosts};
-pub use job::{Cmd, FailedCmd, JobQueue, validate_queue_file};
+pub use job::{AllocationPolicy, Cmd, FailedCmd, JobQueue, validate_queue_file};
 pub use scheduler::{HostSlotState, JobCompletion, find_host_for_job, spawn_job};
 pub use session::Session;
 pub use sync::LockedFile;

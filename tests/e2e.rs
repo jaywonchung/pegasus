@@ -112,7 +112,7 @@ async fn run_scheduling_test(hosts: Vec<Host>, commands: Vec<Cmd>) -> Vec<Vec<Ex
         // Try to schedule the pending job.
         if let Some(cmd) = pending_cmd.take() {
             if let Some((host_index, allocated_slots)) =
-                find_host_for_job(&mut slot_states, cmd.slots_required)
+                find_host_for_job(&mut slot_states, cmd.slots_required, cmd.allocation_policy)
             {
                 let task = spawn_job(
                     Arc::clone(&sessions[host_index]),

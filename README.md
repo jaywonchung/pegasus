@@ -103,8 +103,7 @@ When running GPU jobs, you often want multiple jobs to share a single node. For 
 - hostname:
     - gpu-node-1
     - gpu-node-2
-  slots:
-    - 8
+  slots: 8
 ```
 
 Each host now has 8 slots (e.g., 8 GPUs). Jobs can declare how many slots they need:
@@ -138,14 +137,32 @@ Each host now has 8 slots (e.g., 8 GPUs). Jobs can declare how many slots they n
 
 The `{{slots}}` variable is automatically injected with the allocated slot indices (e.g., `0,1,2,3` for a 4-slot job). Use it with `CUDA_VISIBLE_DEVICES` to control which GPUs your job uses.
 
-**Key behaviors:**
-- Jobs without `slots` default to 1 slot (backwards compatible).
-- Hosts without `slots` default to 1 slot (backwards compatible).
-- Allocation is **NVLink-aware**: prefers contiguous pairs starting at even indices (0-1, 2-3, 4-5, 6-7) for better GPU interconnect performance.
-- Jobs are scheduled in **FIFO order**. If the next job doesn't fit, Pegasus waits for slots to free up.
-- A job requiring more slots than any single host can provide will cause Pegasus to abort with an error.
+Notes:  
+- Jobs without `slots` default to 1 slot.
+- Hosts without `slots` default to 1 slot.
+- Jobs are scheduled in **FIFO order**. If the next job doesn't fit, Pegasus waits for slots to free up. Therefore, **ordering your jobs by descending slot count** is recommended lower makespan.
+- All jobs are still expected to **fit in a single host**. A job requiring more slots than any single host can provide is skipped and reported as an error at the end.
 
-**Tip:** Order your jobs by descending slot count for better packing efficiency.
+### Allocation Policies
+
+By default, Pegasus uses **first-fit** allocation: it tries to find a contiguous block of slots (helpful for nodes with only NVLink bridges), but falls back to any available slots if needed. For workloads that strictly require aligned GPU blocks, you can use **buddy** allocation policy.
+
+```yaml
+# queue.yaml
+- command:
+    - CUDA_VISIBLE_DEVICES={{slots}} python train_distributed.py
+  slots: 4
+  allocation_policy: buddy
+```
+
+Two policies are supported:  
+- `first_fit` (default): Tries even-aligned contiguous blocks, then any contiguous block, then falls back to any available slots.
+- `buddy`: Strict buddy allocation. Requires power-of-2 aligned blocks with no fallback. A 2-slot job gets 0-1, 2-3, 4-5, or 6-7 (never 1-2 or 3-4). A 4-slot job gets 0-3 or 4-7 (never 2-5). If no aligned block is available, the job waits.
+
+Notes:  
+- `allocation_policy` in the queue file takes a single value, not a list of values.
+- `buddy` allocation requires the slot count to be a power of 2 (1, 2, 4, 8). Non-power-of-2 slot counts with `buddy` are skipped and reported as errors.
+- The `{{allocation_policy}}` template variable is available in commands if needed.
 
 ### Parametrizing Commands for Conciseness
 

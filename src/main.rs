@@ -9,8 +9,8 @@ use tokio::sync::{Barrier, Mutex, broadcast};
 use tokio::time;
 
 use pegasus_ssh::{
-    Cmd, Config, FailedCmd, Host, HostSlotState, JobCompletion, JobQueue, LockedFile, Mode,
-    PegasusError, Session, find_host_for_job, get_hosts, spawn_job,
+    AllocationPolicy, Cmd, Config, FailedCmd, Host, HostSlotState, JobCompletion, JobQueue,
+    LockedFile, Mode, PegasusError, Session, find_host_for_job, get_hosts, spawn_job,
 };
 
 async fn run_broadcast(cli: &Config) -> Result<(), PegasusError> {
@@ -179,12 +179,25 @@ async fn run_queue(cli: &Config) -> Result<(), PegasusError> {
 
         // Try to schedule the pending job.
         if let Some(cmd) = pending_cmd.take() {
-            // Validate job fits in at least one host.
-            if cmd.slots_required > max_host_slots {
-                let error_msg = format!(
+            // Validate job slot requirements.
+            let error_msg = if cmd.slots_required == 0 {
+                Some("Job requires 0 slots".to_string())
+            } else if cmd.slots_required > max_host_slots {
+                Some(format!(
                     "Job requires {} slots but max host capacity is {}",
                     cmd.slots_required, max_host_slots
-                );
+                ))
+            } else if cmd.allocation_policy == AllocationPolicy::Buddy
+                && !cmd.slots_required.is_power_of_two()
+            {
+                Some(format!(
+                    "Buddy allocation requires power-of-2 slots, got {}",
+                    cmd.slots_required
+                ))
+            } else {
+                None
+            };
+            if let Some(error_msg) = error_msg {
                 eprintln!("[Pegasus] ERROR: {}. Skipping.", error_msg);
                 errored.lock().await.push(FailedCmd::new(
                     "(no host)".to_string(),
@@ -196,7 +209,7 @@ async fn run_queue(cli: &Config) -> Result<(), PegasusError> {
 
             // Find a host with enough free slots.
             if let Some((host_index, allocated_slots)) =
-                find_host_for_job(&mut slot_states, cmd.slots_required)
+                find_host_for_job(&mut slot_states, cmd.slots_required, cmd.allocation_policy)
             {
                 // Spawn job execution task.
                 let task = spawn_job(

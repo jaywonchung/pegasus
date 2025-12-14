@@ -67,3 +67,16 @@
     - 8
   model:
     - llama-7b
+
+# Buddy allocation example - strict power-of-2 aligned GPU blocks.
+# 2-GPU jobs get 0-1, 2-3, 4-5, or 6-7 (never 1-2, 3-4, etc.)
+# 4-GPU jobs get 0-3 or 4-7 (never 2-5, etc.)
+# This ensures proper NVLink topology for all-reduce operations.
+# If no aligned block is available, the job waits (unlike first_fit which
+# would fall back to any available slots).
+- command:
+    - CUDA_VISIBLE_DEVICES={{slots}} python train_nccl.py --policy {{allocation_policy}}
+  slots:
+    - 2
+    - 4
+  allocation_policy: buddy
