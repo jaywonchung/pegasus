@@ -1,0 +1,82 @@
+# Multi-GPU jobs with parametrization.
+# {{slots}} = allocated GPU indices (from scheduler)
+# {{model}}, {{dataset}} = job parameters (from this file)
+# {{hostname}}, {{node_type}} = host parameters (from hosts file)
+
+# 8-GPU distributed training sweep (only fits on 8-slot hosts)
+- command:
+    - |
+      CUDA_VISIBLE_DEVICES={{slots}} \
+      torchrun --nproc_per_node=8 train.py \
+        --model {{model}} \
+        --dataset {{dataset}} \
+        --output /results/{{hostname}}/{{model}}_{{dataset}}
+  slots:
+    - 8
+  model:
+    - qwen3-8b
+    - llama-7b
+  dataset:
+    - wikitext
+    - c4
+
+# 4-GPU training jobs (run on any node with 4+ GPUs)
+- command:
+    - |
+      CUDA_VISIBLE_DEVICES={{slots}} \
+      torchrun --nproc_per_node=4 train.py \
+        --model {{model}} \
+        --lr {{lr}} \
+        --node-type {{node_type}}
+  slots:
+    - 4
+  model:
+    - qwen3-8b
+    - qwen3-14b
+  lr:
+    - 1e-4
+    - 5e-5
+
+# 2-GPU jobs for smaller experiments (NVLink-aware allocation)
+- command:
+    - CUDA_VISIBLE_DEVICES={{slots}} python finetune.py --model {{model}} --task {{task}}
+  slots:
+    - 2
+  model:
+    - bert-base
+    - roberta-base
+  task:
+    - sst2
+    - mnli
+    - qqp
+
+# Single-GPU evaluation jobs
+- command:
+    - CUDA_VISIBLE_DEVICES={{slots}} python evaluate.py --checkpoint {{ckpt}}
+  ckpt:
+    - checkpoints/model_best.pt
+    - checkpoints/model_final.pt
+
+# GPU scaling benchmark - same job with 1, 2, 4, 8 GPUs to measure scaling efficiency
+- command:
+    - CUDA_VISIBLE_DEVICES={{slots}} python benchmark.py --model {{model}}
+  slots:
+    - 1
+    - 2
+    - 4
+    - 8
+  model:
+    - llama-7b
+
+# Buddy allocation example - strict power-of-2 aligned GPU blocks.
+# 2-GPU jobs get 0-1, 2-3, 4-5, or 6-7 (never 1-2, 3-4, etc.)
+# 4-GPU jobs get 0-3 or 4-7 (never 2-5, etc.)
+# This ensures proper NVLink topology for all-reduce operations.
+# If no aligned block is available, the job waits (unlike first_fit which
+# would fall back to any available slots).
+- command:
+    - CUDA_VISIBLE_DEVICES={{slots}} python train_nccl.py --policy {{allocation_policy}}
+  slots:
+    - 2
+    - 4
+  allocation_policy: buddy

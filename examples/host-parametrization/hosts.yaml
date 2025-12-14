@@ -1,0 +1,14 @@
+# Host parametrization example.
+# Expands to multiple logical hosts from a single entry.
+# Use {{param}} in commands to reference host parameters.
+
+# Same physical host with different GPU assignments
+- hostname:
+    - gpu-server
+  gpu_id:
+    - 0
+    - 1
+    - 2
+    - 3
+# Expands to 4 logical hosts, each with a different gpu_id parameter.
+# Commands can use {{gpu_id}} to get the assigned GPU.

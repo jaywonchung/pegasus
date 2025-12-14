@@ -1,0 +1,13 @@
+# Heterogeneous GPU cluster with different GPU counts.
+# Jobs are scheduled on hosts with sufficient free slots.
+
+# High-end server with 8 GPUs
+- hostname:
+    - gpu-server-8x
+  slots: 8
+
+# Mid-range servers with 4 GPUs each
+- hostname:
+    - gpu-server-4x-01
+    - gpu-server-4x-02
+  slots: 4

@@ -4,47 +4,46 @@
 //! When Pegasus ends up getting its own configuration file, that will
 //! come to sit here, too.
 
-use clap::{ArgEnum, Parser};
+use clap::{Parser, ValueEnum};
 
 #[derive(Parser)]
-#[clap(version)]
-#[clap(author)]
+#[command(version, author)]
 pub struct Config {
     /// Broadcast (b), Queue (q), and Lock (l) mode
-    #[clap(arg_enum)]
+    #[arg(value_enum)]
     pub mode: Mode,
 
     /// Don't terminate when done; watch the queue file for more jobs
-    #[clap(long, short)]
+    #[arg(long, short)]
     pub daemon: bool,
 
     /// (Broadcast mode) Don't abort Pegasus even if a command fails
-    #[clap(long, short)]
+    #[arg(long, short)]
     pub ignore_errors: bool,
 
     /// (Lock mode) Which editor to use to open the queue file
-    #[clap(long)]
+    #[arg(long)]
     pub editor: Option<String>,
 
     /// How often to print output. Giving 0 will suppress stdout/stderr.
-    #[clap(long, short, default_value = "1")]
+    #[arg(long, short, default_value = "1")]
     pub print_period: usize,
 
     /// Queue file to use. Defaults to `queue.yaml`
-    #[clap(long, default_value = "queue.yaml")]
+    #[arg(long, short = 'Q', default_value = "queue.yaml")]
     pub queue_file: String,
 
     /// Host file to use. Defaults to `hosts.yaml`
-    #[clap(long, default_value = "hosts.yaml")]
+    #[arg(long, short = 'H', default_value = "hosts.yaml")]
     pub hosts_file: String,
 }
 
-#[derive(PartialEq, Clone, ArgEnum)]
+#[derive(PartialEq, Clone, ValueEnum)]
 pub enum Mode {
-    #[clap(name = "b")]
+    #[value(name = "b")]
     Broadcast,
-    #[clap(name = "q")]
+    #[value(name = "q")]
     Queue,
-    #[clap(name = "l")]
+    #[value(name = "l")]
     Lock,
 }

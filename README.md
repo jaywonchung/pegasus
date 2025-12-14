@@ -15,6 +15,7 @@ Run a list of commands on a set of SSH nodes. With a bit of optional parametriza
 - Two modes:
   - **Broadcast** mode runs each command on every node.
   - **Queue** mode runs each command once on the next free node.
+    - Hosts can expose integer *slots* and jobs can request integer *slots* needed to run (good for GPU node slicing).
 - Modify the **file-based queue** (`queue.yaml`) while Pegasus is running.
 - **Parametrize** hosts and commands.
 
@@ -92,6 +93,76 @@ You can use these parameters in your commands. By the way, the templating engine
 ```
 
 Four sub-nodes and four jobs. So all jobs will start executing at the same time.
+
+### Resource-Aware Scheduling with Slots
+
+When running GPU jobs, you often want multiple jobs to share a single node. For example, an 8-GPU node can run four 2-GPU jobs concurrently. Pegasus supports this with **slots**.
+
+```yaml
+# hosts.yaml
+- hostname:
+    - gpu-node-1
+    - gpu-node-2
+  slots: 8
+```
+
+Each host now has 8 slots (e.g., 8 GPUs). Jobs can declare how many slots they need:
+
+```yaml
+# queue.yaml
+# 8-GPU job: uses all GPUs on one node
+- command:
+    - CUDA_VISIBLE_DEVICES={{slots}} python train.py --model llama-70b
+  slots:
+    - 8
+
+# 4-GPU jobs: two can run concurrently on an 8-GPU node
+- command:
+    - CUDA_VISIBLE_DEVICES={{slots}} python train.py --model llama-7b
+    - CUDA_VISIBLE_DEVICES={{slots}} python train.py --model mistral-7b
+  slots:
+    - 4
+
+# 2-GPU jobs: four can run concurrently on an 8-GPU node
+- command:
+    - CUDA_VISIBLE_DEVICES={{slots}} python train.py --model {{model}}
+  model:
+    - bert
+    - roberta
+    - gpt2
+    - t5
+  slots:
+    - 2
+```
+
+The `{{slots}}` variable is automatically injected with the allocated slot indices (e.g., `0,1,2,3` for a 4-slot job). Use it with `CUDA_VISIBLE_DEVICES` to control which GPUs your job uses.
+
+Notes:  
+- Jobs without `slots` default to 1 slot.
+- Hosts without `slots` default to 1 slot.
+- Jobs are scheduled in **FIFO order**. If the next job doesn't fit, Pegasus waits for slots to free up. Therefore, **ordering your jobs by descending slot count** is recommended lower makespan.
+- All jobs are still expected to **fit in a single host**. A job requiring more slots than any single host can provide is skipped and reported as an error at the end.
+
+### Allocation Policies
+
+By default, Pegasus uses **first-fit** allocation: it tries to find a contiguous block of slots (helpful for nodes with only NVLink bridges), but falls back to any available slots if needed. For workloads that strictly require aligned GPU blocks, you can use **buddy** allocation policy.
+
+```yaml
+# queue.yaml
+- command:
+    - CUDA_VISIBLE_DEVICES={{slots}} python train_distributed.py
+  slots: 4
+  allocation_policy: buddy
+```
+
+Two policies are supported:  
+- `first_fit` (default): Tries even-aligned contiguous blocks, then any contiguous block, then falls back to any available slots.
+- `buddy`: Strict buddy allocation. Requires power-of-2 aligned blocks with no fallback. A 2-slot job gets 0-1, 2-3, 4-5, or 6-7 (never 1-2 or 3-4). A 4-slot job gets 0-3 or 4-7 (never 2-5). If no aligned block is available, the job waits.
+
+Notes:  
+- `allocation_policy` in the queue file takes a single value, not a list of values.
+- `buddy` allocation requires the slot count to be a power of 2 (1, 2, 4, 8). Non-power-of-2 slot counts with `buddy` are skipped and reported as errors.
+- The `{{allocation_policy}}` template variable is available in commands if needed.
 
 ### Parametrizing Commands for Conciseness
 
