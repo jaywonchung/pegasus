@@ -317,8 +317,5 @@ A work-in-progress idea in the `jw-remote-cancel` branch is to wrap the command 
 ## Development
 
 ```bash
-cargo check --all
-cargo fmt --all
-cargo clippy --all
-cargo test
+bash scripts/check.sh
 ```
