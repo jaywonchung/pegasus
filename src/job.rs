@@ -106,6 +106,11 @@ impl Cmd {
         let host = host.clone();
         self.params.extend(host.params);
         self.params.insert("hostname".to_string(), host.hostname);
+        // Inject allocation_policy for use as {{allocation_policy}} in templates.
+        self.params.insert(
+            "allocation_policy".to_string(),
+            self.allocation_policy.to_string(),
+        );
         registry
             .render(&self.command, &self.params)
             .unwrap_or_else(|e| {
@@ -250,18 +255,20 @@ impl Serialize for JobSpecInner {
 pub struct JobQueue {
     queue_file: String,
     cancelled: Arc<Mutex<bool>>,
+    max_host_slots: usize,
 }
 
 impl JobQueue {
-    pub fn new(queue_file: &str, cancelled: Arc<Mutex<bool>>) -> Self {
+    pub fn new(queue_file: &str, cancelled: Arc<Mutex<bool>>, max_host_slots: usize) -> Self {
         Self {
             queue_file: queue_file.to_owned(),
             cancelled,
+            max_host_slots,
         }
     }
 
     pub async fn next(&mut self) -> Option<Cmd> {
-        loop {
+        'outer: loop {
             let queue_file = LockedFile::acquire(&self.queue_file).await;
             // This handles the case where the user killed Pegasus while having
             // the queue file open in lock mode.
@@ -313,20 +320,54 @@ impl JobQueue {
                     cmd.allocation_policy = allocation_policy;
                     job.push(cmd);
                 }
+                // Extract and validate slots before cartesian expansion.
+                let slots_values: Vec<usize> = match spec.remove("slots") {
+                    Some(values) => {
+                        let mut parsed = Vec::with_capacity(values.len());
+                        for value in values {
+                            match value.parse::<usize>() {
+                                Ok(0) => {
+                                    eprintln!("[Pegasus] Invalid slots value '0': must be >= 1");
+                                    eprintln!("[Pegasus] Wait 5 seconds for fix...");
+                                    time::sleep(time::Duration::from_secs(5)).await;
+                                    continue 'outer;
+                                }
+                                Ok(n) => parsed.push(n),
+                                Err(_) => {
+                                    eprintln!(
+                                        "[Pegasus] Invalid slots value '{}': must be a positive integer",
+                                        value
+                                    );
+                                    eprintln!("[Pegasus] Wait 5 seconds for fix...");
+                                    time::sleep(time::Duration::from_secs(5)).await;
+                                    continue 'outer;
+                                }
+                            }
+                        }
+                        parsed
+                    }
+                    None => vec![1], // Default to 1 slot
+                };
+
                 for (key, values) in spec {
                     let mut expanded = Vec::with_capacity(values.len());
                     for command in job {
                         for value in values.iter() {
                             let mut command = command.clone();
-                            // `slots` is a reserved key that controls scheduling behavior
-                            // rather than a template parameter. It is stored as a field on
-                            // `Cmd` and later injected back into params in `spawn_job` so
-                            // it can still be used as {{slots}} in command templates.
-                            if key == "slots" {
-                                command.slots_required = value.parse().unwrap_or(1);
-                            } else {
-                                command.params.insert(key.clone(), value.clone());
-                            }
+                            command.params.insert(key.clone(), value.clone());
+                            expanded.push(command);
+                        }
+                    }
+                    job = expanded;
+                }
+
+                // Expand over slots values.
+                {
+                    let mut expanded = Vec::with_capacity(slots_values.len());
+                    for command in job {
+                        for &slots in &slots_values {
+                            let mut command = command.clone();
+                            command.slots_required = slots;
                             expanded.push(command);
                         }
                     }
@@ -335,6 +376,29 @@ impl JobQueue {
 
                 // Take the first command and put the rest back to the beginning of job specs.
                 let next_command = job.remove(0);
+
+                // Validate scheduling constraints before committing.
+                if next_command.slots_required > self.max_host_slots {
+                    eprintln!(
+                        "[Pegasus] Job requires {} slots but max host capacity is {}",
+                        next_command.slots_required, self.max_host_slots
+                    );
+                    eprintln!("[Pegasus] Wait 5 seconds for fix...");
+                    time::sleep(time::Duration::from_secs(5)).await;
+                    continue 'outer;
+                }
+                if next_command.allocation_policy == AllocationPolicy::Buddy
+                    && !next_command.slots_required.is_power_of_two()
+                {
+                    eprintln!(
+                        "[Pegasus] Buddy allocation requires power-of-2 slots, got {}",
+                        next_command.slots_required
+                    );
+                    eprintln!("[Pegasus] Wait 5 seconds for fix...");
+                    time::sleep(time::Duration::from_secs(5)).await;
+                    continue 'outer;
+                }
+
                 let remaining: Vec<_> = job
                     .into_iter()
                     .map(|cmd| JobSpec(JobSpecInner(cmd.into_map())))

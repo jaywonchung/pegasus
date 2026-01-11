@@ -187,13 +187,9 @@ pub fn spawn_job(
             .join(",");
         cmd.insert_param("slots".to_string(), slots_str);
 
-        // Inject {{allocation_policy}} template variable.
-        cmd.insert_param(
-            "allocation_policy".to_string(),
-            cmd.allocation_policy.to_string(),
-        );
-
         // Fill template and run command.
+        // Note: {{allocation_policy}} is already injected via Cmd::into_map() when
+        // the policy differs from the default, and via fill_template's param handling.
         let filled_cmd = cmd.fill_template(&host);
 
         let result = session.run(&filled_cmd, print_period).await;

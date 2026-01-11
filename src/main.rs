@@ -9,13 +9,18 @@ use tokio::sync::{Barrier, Mutex, broadcast};
 use tokio::time;
 
 use pegasus_ssh::{
-    AllocationPolicy, Cmd, Config, FailedCmd, Host, HostSlotState, JobCompletion, JobQueue,
-    LockedFile, Mode, PegasusError, Session, find_host_for_job, get_hosts, spawn_job,
+    Cmd, Config, Host, HostSlotState, JobCompletion, JobQueue, LockedFile, Mode, PegasusError,
+    Session, find_host_for_job, get_hosts, spawn_job,
 };
 
 async fn run_broadcast(cli: &Config) -> Result<(), PegasusError> {
     let hosts = get_hosts(&cli.hosts_file);
     let num_hosts = hosts.len();
+    let max_host_slots = hosts
+        .iter()
+        .map(|h| h.slots)
+        .max()
+        .expect("No hosts defined in hosts file");
 
     // Set handler for Ctrl-c. This will set the `cancelled` variable to
     // true, which will be noticed by the scheduling loop.
@@ -73,7 +78,7 @@ async fn run_broadcast(cli: &Config) -> Result<(), PegasusError> {
     // them to SSH sessions. Wait 0.5s so that we don't touch the queue file
     // when some sesions fail to connect.
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-    let mut job_queue = JobQueue::new(&cli.queue_file, Arc::clone(&cancelled));
+    let mut job_queue = JobQueue::new(&cli.queue_file, Arc::clone(&cancelled), max_host_slots);
     loop {
         // Check cancel.
         if *cancelled.lock().await {
@@ -137,7 +142,11 @@ async fn run_queue(cli: &Config) -> Result<(), PegasusError> {
 
     // Initialize slot state for each host.
     let mut slot_states: Vec<_> = hosts.iter().map(|h| HostSlotState::new(h.slots)).collect();
-    let max_host_slots = hosts.iter().map(|h| h.slots).max().unwrap_or(0);
+    let max_host_slots = hosts
+        .iter()
+        .map(|h| h.slots)
+        .max()
+        .expect("No hosts defined in hosts file");
 
     // Channel for job completion notifications.
     let (completion_tx, completion_rx) = flume::unbounded::<JobCompletion>();
@@ -157,7 +166,7 @@ async fn run_queue(cli: &Config) -> Result<(), PegasusError> {
 
     // The scheduling loop that fetches jobs from the job queue and schedules
     // them on hosts with sufficient slots.
-    let mut job_queue = JobQueue::new(&cli.queue_file, Arc::clone(&cancelled));
+    let mut job_queue = JobQueue::new(&cli.queue_file, Arc::clone(&cancelled), max_host_slots);
     let mut pending_cmd: Option<Cmd> = None;
 
     loop {
@@ -179,34 +188,6 @@ async fn run_queue(cli: &Config) -> Result<(), PegasusError> {
 
         // Try to schedule the pending job.
         if let Some(cmd) = pending_cmd.take() {
-            // Validate job slot requirements.
-            let error_msg = if cmd.slots_required == 0 {
-                Some("Job requires 0 slots".to_string())
-            } else if cmd.slots_required > max_host_slots {
-                Some(format!(
-                    "Job requires {} slots but max host capacity is {}",
-                    cmd.slots_required, max_host_slots
-                ))
-            } else if cmd.allocation_policy == AllocationPolicy::Buddy
-                && !cmd.slots_required.is_power_of_two()
-            {
-                Some(format!(
-                    "Buddy allocation requires power-of-2 slots, got {}",
-                    cmd.slots_required
-                ))
-            } else {
-                None
-            };
-            if let Some(error_msg) = error_msg {
-                eprintln!("[Pegasus] ERROR: {}. Skipping.", error_msg);
-                errored.lock().await.push(FailedCmd::new(
-                    "(no host)".to_string(),
-                    cmd.command.clone(),
-                    error_msg,
-                ));
-                continue;
-            }
-
             // Find a host with enough free slots.
             if let Some((host_index, allocated_slots)) =
                 find_host_for_job(&mut slot_states, cmd.slots_required, cmd.allocation_policy)
@@ -229,23 +210,19 @@ async fn run_queue(cli: &Config) -> Result<(), PegasusError> {
             }
         }
 
-        // If no pending job and no running tasks, check termination.
-        if pending_cmd.is_none() {
-            let slots_in_use: usize = slot_states
-                .iter()
-                .map(|s| s.total_slots() - s.free_slots())
-                .sum();
-            if !cli.daemon && slots_in_use == 0 {
-                break;
-            }
-        }
-
-        // Wait a bit before next iteration to avoid busy loop.
-        // Use shorter sleep when we have capacity and might get completions soon.
+        // Calculate slots in use once for termination check and wait logic.
         let slots_in_use: usize = slot_states
             .iter()
             .map(|s| s.total_slots() - s.free_slots())
             .sum();
+
+        // If no pending job and no running tasks, check termination.
+        if pending_cmd.is_none() && !cli.daemon && slots_in_use == 0 {
+            break;
+        }
+
+        // Wait a bit before next iteration to avoid busy loop.
+        // Use shorter sleep when we have capacity and might get completions soon.
         if pending_cmd.is_some() && slots_in_use > 0 {
             // We have a pending job but no capacity - wait for a completion.
             if let Ok(completion) = completion_rx.recv_async().await {
