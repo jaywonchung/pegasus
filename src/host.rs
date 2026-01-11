@@ -225,4 +225,68 @@ mod tests {
         assert!(display.contains("slots=4"));
         assert!(display.contains("gpu=nvidia"));
     }
+
+    // =========================================================================
+    // is_localhost tests
+    // =========================================================================
+
+    #[test]
+    fn test_is_localhost_true_cases() {
+        assert!(Host::new("localhost".to_string()).is_localhost());
+        assert!(Host::new("LOCALHOST".to_string()).is_localhost());
+        assert!(Host::new("Localhost".to_string()).is_localhost());
+        assert!(Host::new("127.0.0.1".to_string()).is_localhost());
+        assert!(Host::new("::1".to_string()).is_localhost());
+        // With whitespace
+        assert!(Host::new("  localhost  ".to_string()).is_localhost());
+    }
+
+    #[test]
+    fn test_is_localhost_false_cases() {
+        assert!(!Host::new("remote-host".to_string()).is_localhost());
+        assert!(!Host::new("192.168.1.1".to_string()).is_localhost());
+        assert!(!Host::new("localhost.local".to_string()).is_localhost());
+        assert!(!Host::new("my-localhost".to_string()).is_localhost());
+    }
+
+    // =========================================================================
+    // Host display edge cases
+    // =========================================================================
+
+    #[test]
+    fn test_host_display_params_only_no_slots() {
+        let mut host = Host::new("test-host".to_string());
+        // Keep default slots=1, but add params
+        host.params
+            .insert("region".to_string(), "us-east".to_string());
+        let display = format!("{}", host);
+        // Should show params but not "slots=1" since it's default
+        assert!(display.contains("region=us-east"));
+        assert!(!display.contains("slots=1"));
+    }
+
+    #[test]
+    fn test_host_display_multiple_params() {
+        let mut host = Host::new("test-host".to_string());
+        host.slots = 8;
+        host.params.insert("gpu".to_string(), "a100".to_string());
+        host.params.insert("region".to_string(), "eu".to_string());
+        let display = format!("{}", host);
+        assert!(display.contains("slots=8"));
+        assert!(display.contains("gpu=a100"));
+        assert!(display.contains("region=eu"));
+    }
+
+    // =========================================================================
+    // Host slots edge cases
+    // =========================================================================
+
+    #[test]
+    fn test_host_large_slot_count() {
+        let mut host = Host::new("bighost".to_string());
+        host.slots = 64;
+        assert_eq!(host.slots, 64);
+        let display = format!("{}", host);
+        assert!(display.contains("slots=64"));
+    }
 }

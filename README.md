@@ -313,3 +313,12 @@ You need to walk into every node and manually kill commands.
 That said, you can still use Broadcast mode to automate that.
 
 A work-in-progress idea in the `jw-remote-cancel` branch is to wrap the command in a shell script that checks the parent PID of the process, and if it becomes 1, it means that the SSH session was killed, and the command needs to be killed as well.
+
+## Development
+
+```bash
+cargo check --all
+cargo fmt --all
+cargo clippy --all
+cargo test
+```

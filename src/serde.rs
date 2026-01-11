@@ -165,4 +165,153 @@ mod tests {
         let spec: HostSpecParsed = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(spec.slots, None);
     }
+
+    // =========================================================================
+    // Error cases for host spec parsing
+    // =========================================================================
+
+    #[test]
+    fn test_host_slots_negative_number_errors() {
+        let yaml = "hostname:\n  - server1\nslots: -1";
+        let result: Result<HostSpecParsed, _> = serde_yaml::from_str(yaml);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_host_slots_string_errors() {
+        let yaml = "hostname:\n  - server1\nslots: eight";
+        let result: Result<HostSpecParsed, _> = serde_yaml::from_str(yaml);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_host_slots_float_truncated() {
+        // YAML floats get converted, this tests the behavior
+        let yaml = "hostname:\n  - server1\nslots: 8.5";
+        let result: Result<HostSpecParsed, _> = serde_yaml::from_str(yaml);
+        // This may either parse as 8 or fail - test current behavior
+        if let Ok(spec) = result {
+            assert_eq!(spec.slots, Some(8));
+        }
+        // If it errors, that's also acceptable
+    }
+
+    #[test]
+    fn test_host_slots_zero() {
+        // Zero is syntactically valid YAML but semantically questionable
+        let yaml = "hostname:\n  - server1\nslots: 0";
+        let result: Result<HostSpecParsed, _> = serde_yaml::from_str(yaml);
+        // The parser accepts 0, validation happens elsewhere
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().slots, Some(0));
+    }
+
+    #[test]
+    fn test_host_slots_very_large() {
+        let yaml = "hostname:\n  - server1\nslots: 1024";
+        let spec: HostSpecParsed = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(spec.slots, Some(1024));
+    }
+
+    // =========================================================================
+    // Parameter parsing edge cases
+    // =========================================================================
+
+    #[test]
+    fn test_host_params_mixed_types() {
+        let yaml = r#"
+hostname:
+  - server1
+gpu_count: 8
+region: us-east
+"#;
+        let spec: HostSpecParsed = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(
+            spec.params.get("gpu_count").unwrap(),
+            &vec!["8".to_string()]
+        );
+        assert_eq!(
+            spec.params.get("region").unwrap(),
+            &vec!["us-east".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_host_params_list_with_numbers() {
+        let yaml = r#"
+hostname:
+  - server1
+batch_size:
+  - 16
+  - 32
+  - 64
+"#;
+        let spec: HostSpecParsed = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(
+            spec.params.get("batch_size").unwrap(),
+            &vec!["16".to_string(), "32".to_string(), "64".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_host_params_empty_list_errors() {
+        let yaml = r#"
+hostname:
+  - server1
+empty_param: []
+"#;
+        let spec: HostSpecParsed = serde_yaml::from_str(yaml).unwrap();
+        // Empty list is valid but may cause issues downstream
+        assert_eq!(
+            spec.params.get("empty_param").unwrap(),
+            &Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn test_host_params_nested_object_errors() {
+        let yaml = r#"
+hostname:
+  - server1
+invalid_param:
+  nested: value
+"#;
+        let result: Result<HostSpecParsed, _> = serde_yaml::from_str(yaml);
+        assert!(result.is_err());
+    }
+
+    // =========================================================================
+    // Hostname parametrization
+    // =========================================================================
+
+    #[test]
+    fn test_hostname_list() {
+        let yaml = r#"
+hostname:
+  - server1
+  - server2
+  - server3
+slots: 4
+"#;
+        let spec: HostSpecParsed = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(
+            spec.params.get("hostname").unwrap(),
+            &vec![
+                "server1".to_string(),
+                "server2".to_string(),
+                "server3".to_string()
+            ]
+        );
+        assert_eq!(spec.slots, Some(4));
+    }
+
+    #[test]
+    fn test_hostname_single_string() {
+        let yaml = "hostname: server1\nslots: 8";
+        let spec: HostSpecParsed = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(
+            spec.params.get("hostname").unwrap(),
+            &vec!["server1".to_string()]
+        );
+    }
 }

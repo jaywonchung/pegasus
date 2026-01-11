@@ -494,4 +494,157 @@ count:
 
         assert_eq!(spec_scalar.0.0, spec_list.0.0);
     }
+
+    // ==========================================================================
+    // AllocationPolicy parsing tests
+    // ==========================================================================
+
+    #[test]
+    fn test_allocation_policy_parse_first_fit_variants() {
+        assert_eq!(
+            "first_fit".parse::<AllocationPolicy>().unwrap(),
+            AllocationPolicy::FirstFit
+        );
+        assert_eq!(
+            "firstfit".parse::<AllocationPolicy>().unwrap(),
+            AllocationPolicy::FirstFit
+        );
+        assert_eq!(
+            "first-fit".parse::<AllocationPolicy>().unwrap(),
+            AllocationPolicy::FirstFit
+        );
+        assert_eq!(
+            "FIRST_FIT".parse::<AllocationPolicy>().unwrap(),
+            AllocationPolicy::FirstFit
+        );
+        assert_eq!(
+            "FirstFit".parse::<AllocationPolicy>().unwrap(),
+            AllocationPolicy::FirstFit
+        );
+    }
+
+    #[test]
+    fn test_allocation_policy_parse_buddy_variants() {
+        assert_eq!(
+            "buddy".parse::<AllocationPolicy>().unwrap(),
+            AllocationPolicy::Buddy
+        );
+        assert_eq!(
+            "BUDDY".parse::<AllocationPolicy>().unwrap(),
+            AllocationPolicy::Buddy
+        );
+        assert_eq!(
+            "Buddy".parse::<AllocationPolicy>().unwrap(),
+            AllocationPolicy::Buddy
+        );
+    }
+
+    #[test]
+    fn test_allocation_policy_parse_invalid() {
+        let result = "invalid".parse::<AllocationPolicy>();
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("Unknown allocation policy"));
+        assert!(err.contains("invalid"));
+    }
+
+    #[test]
+    fn test_allocation_policy_parse_empty() {
+        let result = "".parse::<AllocationPolicy>();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_allocation_policy_parse_typo() {
+        // Common typos should fail with helpful error
+        let result = "first_fitt".parse::<AllocationPolicy>();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unknown allocation policy"));
+    }
+
+    #[test]
+    fn test_allocation_policy_display() {
+        assert_eq!(AllocationPolicy::FirstFit.to_string(), "first_fit");
+        assert_eq!(AllocationPolicy::Buddy.to_string(), "buddy");
+    }
+
+    #[test]
+    fn test_allocation_policy_default() {
+        assert_eq!(AllocationPolicy::default(), AllocationPolicy::FirstFit);
+    }
+
+    // ==========================================================================
+    // Cmd allocation policy tests
+    // ==========================================================================
+
+    #[test]
+    fn test_cmd_default_allocation_policy() {
+        let cmd = Cmd::new("echo test".to_string());
+        assert_eq!(cmd.allocation_policy, AllocationPolicy::FirstFit);
+    }
+
+    #[test]
+    fn test_cmd_into_map_without_allocation_policy() {
+        let cmd = Cmd::new("echo test".to_string());
+        let map = cmd.into_map();
+        // Default policy should NOT be in the map
+        assert!(!map.contains_key("allocation_policy"));
+    }
+
+    #[test]
+    fn test_cmd_into_map_with_buddy_policy() {
+        let mut cmd = Cmd::new("echo test".to_string());
+        cmd.allocation_policy = AllocationPolicy::Buddy;
+        let map = cmd.into_map();
+        // Non-default policy should be in the map
+        assert_eq!(
+            map.get("allocation_policy").unwrap(),
+            &vec!["buddy".to_string()]
+        );
+    }
+
+    // ==========================================================================
+    // Job spec with slots tests
+    // ==========================================================================
+
+    #[test]
+    fn test_job_spec_with_slots_scalar() {
+        let yaml = r#"
+command: echo hello
+slots: 4
+"#;
+        let spec: JobSpec = serde_yaml::from_str(yaml).unwrap();
+        assert!(spec.0.0.contains_key("slots"));
+        assert_eq!(spec.0.0.get("slots").unwrap(), &vec!["4".to_string()]);
+    }
+
+    #[test]
+    fn test_job_spec_with_slots_list() {
+        let yaml = r#"
+command: echo hello
+slots:
+  - 1
+  - 2
+  - 4
+"#;
+        let spec: JobSpec = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(
+            spec.0.0.get("slots").unwrap(),
+            &vec!["1".to_string(), "2".to_string(), "4".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_job_spec_with_allocation_policy() {
+        let yaml = r#"
+command: echo hello
+slots: 2
+allocation_policy: buddy
+"#;
+        let spec: JobSpec = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(
+            spec.0.0.get("allocation_policy").unwrap(),
+            &vec!["buddy".to_string()]
+        );
+    }
 }

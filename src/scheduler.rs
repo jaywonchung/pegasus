@@ -639,4 +639,235 @@ mod tests {
             vec![4, 5, 6, 7]
         );
     }
+
+    // =========================================================================
+    // Large slot count tests
+    // =========================================================================
+
+    #[test]
+    fn test_large_slot_count_16() {
+        let mut state = HostSlotState::new(16);
+        assert_eq!(state.free_slots(), 16);
+
+        // Allocate 8 slots
+        let slots = state.allocate(8, AllocationPolicy::FirstFit).unwrap();
+        assert_eq!(slots.len(), 8);
+        assert_eq!(state.free_slots(), 8);
+
+        // Allocate another 8
+        let slots2 = state.allocate(8, AllocationPolicy::FirstFit).unwrap();
+        assert_eq!(slots2.len(), 8);
+        assert_eq!(state.free_slots(), 0);
+
+        // No more capacity
+        assert!(state.allocate(1, AllocationPolicy::FirstFit).is_none());
+    }
+
+    #[test]
+    fn test_large_slot_count_32() {
+        let mut state = HostSlotState::new(32);
+        assert_eq!(state.free_slots(), 32);
+
+        // Allocate 16 slots with Buddy
+        let slots = state.allocate(16, AllocationPolicy::Buddy).unwrap();
+        assert_eq!(slots.len(), 16);
+        assert_eq!(slots[0], 0); // Should start at 0
+
+        // Allocate another 16 with Buddy
+        let slots2 = state.allocate(16, AllocationPolicy::Buddy).unwrap();
+        assert_eq!(slots2.len(), 16);
+        assert_eq!(slots2[0], 16); // Should start at 16
+    }
+
+    #[test]
+    fn test_buddy_8_slot_alignment_on_16_host() {
+        let mut state = HostSlotState::new(16);
+
+        // 8-slot buddy should start at 0 or 8
+        let slots1 = state.allocate(8, AllocationPolicy::Buddy).unwrap();
+        assert_eq!(slots1[0], 0);
+
+        let slots2 = state.allocate(8, AllocationPolicy::Buddy).unwrap();
+        assert_eq!(slots2[0], 8);
+    }
+
+    // =========================================================================
+    // Mixed policy scheduling tests
+    // =========================================================================
+
+    #[test]
+    fn test_mixed_policies_on_same_host() {
+        let mut state = HostSlotState::new(8);
+
+        // Allocate 2 with FirstFit
+        let ff_slots = state.allocate(2, AllocationPolicy::FirstFit).unwrap();
+        assert_eq!(ff_slots, vec![0, 1]);
+
+        // Allocate 2 with Buddy - should get 2,3 (next aligned pair)
+        let buddy_slots = state.allocate(2, AllocationPolicy::Buddy).unwrap();
+        assert_eq!(buddy_slots, vec![2, 3]);
+
+        // Allocate 1 with FirstFit
+        let ff_single = state.allocate(1, AllocationPolicy::FirstFit).unwrap();
+        assert_eq!(ff_single, vec![4]);
+
+        // Free: 5, 6, 7. Buddy 2-slot needs 4-5 or 6-7. 4 occupied, so 6-7.
+        let buddy_slots2 = state.allocate(2, AllocationPolicy::Buddy).unwrap();
+        assert_eq!(buddy_slots2, vec![6, 7]);
+    }
+
+    #[test]
+    fn test_firstfit_succeeds_where_buddy_fails() {
+        let mut state = HostSlotState::new(8);
+
+        // Occupy slots 0, 2, 4, 6 to fragment the host
+        state.occupied_slots.insert(0);
+        state.occupied_slots.insert(2);
+        state.occupied_slots.insert(4);
+        state.occupied_slots.insert(6);
+        // Free: 1, 3, 5, 7 (no aligned pairs)
+
+        // Buddy 2-slot fails (needs even-aligned contiguous pair)
+        assert!(state.allocate(2, AllocationPolicy::Buddy).is_none());
+
+        // FirstFit 2-slot succeeds with non-contiguous fallback
+        let slots = state.allocate(2, AllocationPolicy::FirstFit).unwrap();
+        assert_eq!(slots, vec![1, 3]); // Non-contiguous
+    }
+
+    // =========================================================================
+    // Multi-host scheduling with policies
+    // =========================================================================
+
+    #[test]
+    fn test_find_host_buddy_skips_fragmented_host() {
+        let mut hosts = vec![HostSlotState::new(8), HostSlotState::new(8)];
+
+        // Fragment host 0: occupy 0, 2, 4, 6
+        hosts[0].occupied_slots.insert(0);
+        hosts[0].occupied_slots.insert(2);
+        hosts[0].occupied_slots.insert(4);
+        hosts[0].occupied_slots.insert(6);
+
+        // Buddy 2-slot should skip host 0 and use host 1
+        let (host_idx, slots) = find_host_for_job(&mut hosts, 2, AllocationPolicy::Buddy).unwrap();
+        assert_eq!(host_idx, 1);
+        assert_eq!(slots, vec![0, 1]);
+    }
+
+    #[test]
+    fn test_find_host_firstfit_uses_fragmented_host() {
+        let mut hosts = vec![HostSlotState::new(8), HostSlotState::new(8)];
+
+        // Fragment host 0: occupy 0, 2, 4, 6
+        hosts[0].occupied_slots.insert(0);
+        hosts[0].occupied_slots.insert(2);
+        hosts[0].occupied_slots.insert(4);
+        hosts[0].occupied_slots.insert(6);
+
+        // FirstFit 2-slot should use host 0 (non-contiguous fallback)
+        let (host_idx, slots) =
+            find_host_for_job(&mut hosts, 2, AllocationPolicy::FirstFit).unwrap();
+        assert_eq!(host_idx, 0);
+        assert_eq!(slots, vec![1, 3]);
+    }
+
+    // =========================================================================
+    // Edge cases
+    // =========================================================================
+
+    #[test]
+    fn test_allocate_more_than_total_slots() {
+        let mut state = HostSlotState::new(4);
+        assert!(state.allocate(5, AllocationPolicy::FirstFit).is_none());
+        assert!(state.allocate(5, AllocationPolicy::Buddy).is_none());
+        assert_eq!(state.free_slots(), 4); // No slots consumed
+    }
+
+    #[test]
+    fn test_buddy_16_slots_on_16_host() {
+        let mut state = HostSlotState::new(16);
+        let slots = state.allocate(16, AllocationPolicy::Buddy).unwrap();
+        assert_eq!(slots.len(), 16);
+        assert_eq!(slots[0], 0);
+        assert_eq!(state.free_slots(), 0);
+    }
+
+    #[test]
+    fn test_release_then_reallocate_same_slots() {
+        let mut state = HostSlotState::new(8);
+
+        let slots1 = state.allocate(4, AllocationPolicy::FirstFit).unwrap();
+        assert_eq!(slots1, vec![0, 1, 2, 3]);
+
+        state.release(&slots1);
+        assert_eq!(state.free_slots(), 8);
+
+        // Should get the same slots back
+        let slots2 = state.allocate(4, AllocationPolicy::FirstFit).unwrap();
+        assert_eq!(slots2, vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn test_release_partial_slots_reuse() {
+        let mut state = HostSlotState::new(8);
+
+        state.allocate(8, AllocationPolicy::FirstFit).unwrap();
+        assert_eq!(state.free_slots(), 0);
+
+        // Release only slots 2, 3
+        state.release(&[2, 3]);
+        assert_eq!(state.free_slots(), 2);
+
+        // Allocate 2 - should get 2, 3 back
+        let new_slots = state.allocate(2, AllocationPolicy::FirstFit).unwrap();
+        assert_eq!(new_slots, vec![2, 3]);
+    }
+
+    #[test]
+    fn test_slot_state_total_slots() {
+        let state = HostSlotState::new(16);
+        assert_eq!(state.total_slots(), 16);
+        assert_eq!(state.free_slots(), 16);
+    }
+
+    #[test]
+    fn test_odd_slot_count_host() {
+        // Host with 7 slots (odd number)
+        let mut state = HostSlotState::new(7);
+
+        // 4-slot buddy should work (0-3)
+        let slots = state.allocate(4, AllocationPolicy::Buddy).unwrap();
+        assert_eq!(slots, vec![0, 1, 2, 3]);
+
+        // 2-slot buddy should get 4-5
+        let slots2 = state.allocate(2, AllocationPolicy::Buddy).unwrap();
+        assert_eq!(slots2, vec![4, 5]);
+
+        // 1 slot left (slot 6)
+        assert_eq!(state.free_slots(), 1);
+        let slots3 = state.allocate(1, AllocationPolicy::Buddy).unwrap();
+        assert_eq!(slots3, vec![6]);
+    }
+
+    #[test]
+    fn test_heterogeneous_hosts_job_routing() {
+        // Hosts with different slot counts
+        let mut hosts = vec![
+            HostSlotState::new(2),  // Small host
+            HostSlotState::new(8),  // Medium host
+            HostSlotState::new(16), // Large host
+        ];
+
+        // 8-slot job can only go to host 1 or 2
+        let (idx, slots) = find_host_for_job(&mut hosts, 8, AllocationPolicy::FirstFit).unwrap();
+        assert!(idx == 1 || idx == 2);
+        assert_eq!(slots.len(), 8);
+
+        // If we allocate 8 on host 1, next 8-slot goes to host 2
+        if idx == 1 {
+            let (idx2, _) = find_host_for_job(&mut hosts, 8, AllocationPolicy::FirstFit).unwrap();
+            assert_eq!(idx2, 2);
+        }
+    }
 }
