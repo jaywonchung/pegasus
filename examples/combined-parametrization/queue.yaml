@@ -1,0 +1,16 @@
+# Combined host and job parametrization.
+# Host params ({{hostname}}, {{gpu_id}}) come from hosts.yaml.
+# Job params ({{lr}}, {{seed}}) come from this file.
+#
+# Job parametrization: 3 (lr) x 2 (seed) = 6 jobs.
+# These 6 jobs are distributed across the 4 logical hosts.
+
+- command:
+    - CUDA_VISIBLE_DEVICES={{gpu_id}} python train.py --lr {{lr}} --seed {{seed}} --log-dir /results/{{hostname}}/lr{{lr}}_seed{{seed}}
+  lr:
+    - 0.001
+    - 0.01
+    - 0.1
+  seed:
+    - 42
+    - 123

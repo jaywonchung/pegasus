@@ -1,0 +1,15 @@
+# GPU cluster with multiple slots per host.
+# Each slot typically represents one GPU.
+# Multiple jobs can run concurrently on the same host.
+
+- hostname:
+    - gpu-node-01
+  slots: 8  # 8 GPUs on this node
+
+- hostname:
+    - gpu-node-02
+  slots: 8
+
+- hostname:
+    - gpu-node-03
+  slots: 4  # Only 4 GPUs on this node

@@ -1,9 +1,0 @@
-- hostname:
-    - localhost
-    - localhost
-  laziness:
-    - 3
-- hostname:
-    - localhost
-  laziness:
-    - 5

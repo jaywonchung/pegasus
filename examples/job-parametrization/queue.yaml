@@ -1,0 +1,34 @@
+# Job parametrization for hyperparameter sweeps.
+# Each parameter list creates a cartesian product of jobs.
+
+# Learning rate sweep (3 jobs)
+- command:
+    - python train.py --lr {{lr}}
+  lr:
+    - 0.001
+    - 0.01
+    - 0.1
+
+# Full hyperparameter grid search (3 x 2 x 2 = 12 jobs)
+- command:
+    - python train.py --lr {{lr}} --batch-size {{bs}} --optimizer {{opt}}
+  lr:
+    - 0.001
+    - 0.01
+    - 0.1
+  bs:
+    - 32
+    - 64
+  opt:
+    - adam
+    - sgd
+
+# Model architecture sweep (4 jobs)
+- command:
+    - python train.py --model {{model}} --hidden-dim {{dim}}
+  model:
+    - transformer
+    - lstm
+  dim:
+    - 256
+    - 512

@@ -1,0 +1,5 @@
+# Simple host list for queue mode.
+# Each host has 1 slot (default), so one job runs per host at a time.
+- server1.example.com
+- server2.example.com
+- server3.example.com
