@@ -102,7 +102,7 @@ async fn run_scheduling_test(hosts: Vec<Host>, commands: Vec<Cmd>) -> Vec<Vec<Ex
     let mut command_trackers: Vec<Arc<Mutex<Vec<ExecutedCommand>>>> = Vec::with_capacity(num_hosts);
 
     for host in &hosts {
-        let mock = MockSession::new(&host.hostname).with_delay_ms(10);
+        let mock = MockSession::new(&host.hostname).with_delay_ms(50);
         command_trackers.push(mock.executed_commands());
         sessions.push(Arc::new(Box::new(mock) as Box<dyn Session + Send + Sync>));
     }
@@ -131,6 +131,7 @@ async fn run_scheduling_test(hosts: Vec<Host>, commands: Vec<Cmd>) -> Vec<Vec<Ex
         }
 
         // Try to schedule the pending job.
+        let mut needs_wait = false;
         if let Some(cmd) = pending_cmd.take() {
             if let Some((host_index, allocated_slots)) =
                 find_host_for_job(&mut slot_states, cmd.slots_required, cmd.allocation_policy)
@@ -150,8 +151,9 @@ async fn run_scheduling_test(hosts: Vec<Host>, commands: Vec<Cmd>) -> Vec<Vec<Ex
                 // Get next command
                 pending_cmd = cmd_iter.next();
             } else {
-                // No host has capacity. Put job back and wait.
+                // No host has capacity. Put job back and wait for completion.
                 pending_cmd = Some(cmd);
+                needs_wait = true;
             }
         } else {
             // Get next command if available
@@ -169,12 +171,8 @@ async fn run_scheduling_test(hosts: Vec<Host>, commands: Vec<Cmd>) -> Vec<Vec<Ex
             }
         }
 
-        // Wait for a completion if we have a pending job but no capacity.
-        let slots_in_use: usize = slot_states
-            .iter()
-            .map(|s| s.total_slots() - s.free_slots())
-            .sum();
-        if pending_cmd.is_some() && slots_in_use > 0 {
+        // Wait for a completion only if we couldn't schedule due to no capacity.
+        if needs_wait {
             if let Ok(completion) = completion_rx.recv_async().await {
                 slot_states[completion.host_index].release(&completion.released_slots);
             }
@@ -252,7 +250,7 @@ async fn run_scheduling_test_with_sessions(
         }
         None => {
             for host in &hosts {
-                let mock = MockSession::new(&host.hostname).with_delay_ms(10);
+                let mock = MockSession::new(&host.hostname).with_delay_ms(50);
                 command_trackers.push(mock.executed_commands());
                 sessions.push(Arc::new(Box::new(mock) as Box<dyn Session + Send + Sync>));
             }
@@ -283,6 +281,7 @@ async fn run_scheduling_test_with_sessions(
         }
 
         // Try to schedule the pending job.
+        let mut needs_wait = false;
         if let Some(cmd) = pending_cmd.take() {
             if let Some((host_index, allocated_slots)) =
                 find_host_for_job(&mut slot_states, cmd.slots_required, cmd.allocation_policy)
@@ -302,8 +301,9 @@ async fn run_scheduling_test_with_sessions(
                 // Get next command
                 pending_cmd = cmd_iter.next();
             } else {
-                // No host has capacity. Put job back and wait.
+                // No host has capacity. Put job back and wait for completion.
                 pending_cmd = Some(cmd);
+                needs_wait = true;
             }
         } else {
             // Get next command if available
@@ -322,11 +322,7 @@ async fn run_scheduling_test_with_sessions(
         }
 
         // Wait for a completion if we have a pending job but no capacity.
-        let slots_in_use: usize = slot_states
-            .iter()
-            .map(|s| s.total_slots() - s.free_slots())
-            .sum();
-        if pending_cmd.is_some() && slots_in_use > 0 {
+        if needs_wait {
             if let Ok(completion) = completion_rx.recv_async().await {
                 slot_states[completion.host_index].release(&completion.released_slots);
             }
@@ -440,7 +436,7 @@ async fn test_e2e_slot_allocation_for_multi_gpu_job() {
     assert!(!four_gpu_cmd.contains("{{slots}}"));
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_e2e_nvlink_aware_2gpu_allocation() {
     // Test that 2-GPU jobs prefer even-aligned pairs.
     let hosts = parse_hosts_yaml(
@@ -453,17 +449,40 @@ async fn test_e2e_nvlink_aware_2gpu_allocation() {
     );
 
     // Four 2-slot jobs should get pairs: (0,1), (2,3), (4,5), (6,7).
+    // Use {{slots}} template to capture actual allocated slots.
     let commands = vec![
-        make_cmd("echo 2gpu_a", 2),
-        make_cmd("echo 2gpu_b", 2),
-        make_cmd("echo 2gpu_c", 2),
-        make_cmd("echo 2gpu_d", 2),
+        make_cmd("echo slots={{slots}} 2gpu_a", 2),
+        make_cmd("echo slots={{slots}} 2gpu_b", 2),
+        make_cmd("echo slots={{slots}} 2gpu_c", 2),
+        make_cmd("echo slots={{slots}} 2gpu_d", 2),
     ];
 
-    let results = run_scheduling_test(hosts, commands).await;
+    let sessions = MockSession::new("localhost").with_delay_ms(100);
+    let result = run_scheduling_test_with_sessions(hosts, commands, Some(vec![sessions])).await;
 
     // All 4 jobs should complete.
-    assert_eq!(results[0].len(), 4);
+    assert_eq!(result.executed[0].len(), 4);
+
+    // Verify that slots are even-aligned pairs.
+    let expected_pairs = ["0,1", "2,3", "4,5", "6,7"];
+    let mut found_pairs: Vec<String> = result.executed[0]
+        .iter()
+        .filter_map(|cmd| {
+            // Extract slots=X,Y from command
+            cmd.command
+                .split("slots=")
+                .nth(1)
+                .and_then(|s| s.split_whitespace().next())
+                .map(|s| s.to_string())
+        })
+        .collect();
+    found_pairs.sort();
+
+    assert_eq!(
+        found_pairs, expected_pairs,
+        "Expected even-aligned pairs {:?}, got {:?}",
+        expected_pairs, found_pairs
+    );
 }
 
 #[tokio::test]

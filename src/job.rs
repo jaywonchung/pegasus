@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::fs::OpenOptions;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use handlebars::Handlebars;
 use serde::ser::SerializeMap;
@@ -14,6 +14,13 @@ use void::Void;
 use crate::host::Host;
 use crate::serde::string_or_mapping;
 use crate::sync::LockedFile;
+
+/// Global Handlebars registry with misc helpers pre-registered.
+static HANDLEBARS_REGISTRY: LazyLock<Handlebars<'static>> = LazyLock::new(|| {
+    let mut registry = Handlebars::new();
+    handlebars_misc_helpers::register(&mut registry);
+    registry
+});
 
 /// Allocation policy for job slot assignment.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -98,11 +105,6 @@ impl Cmd {
     }
 
     pub fn fill_template(mut self, host: &Host) -> String {
-        let mut registry = Handlebars::new();
-        handlebars_misc_helpers::register(&mut registry);
-        registry
-            .register_template_string(&self.command, &self.command)
-            .expect("Failed to register template string.");
         let host = host.clone();
         self.params.extend(host.params);
         self.params.insert("hostname".to_string(), host.hostname);
@@ -111,8 +113,8 @@ impl Cmd {
             "allocation_policy".to_string(),
             self.allocation_policy.to_string(),
         );
-        registry
-            .render(&self.command, &self.params)
+        HANDLEBARS_REGISTRY
+            .render_template(&self.command, &self.params)
             .unwrap_or_else(|e| {
                 panic!(
                     "Failed to render command template '{}' with params '{:#?}'. Error: {:?}",
